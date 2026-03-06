@@ -1,4 +1,7 @@
-// Frontend main entry.
+// 前端主入口：
+// 1) 维护全局状态（服务列表、当前路由、文件管理、日志流）；
+// 2) 负责路由切换与页面渲染；
+// 3) 封装与后端 API 的交互。
 (() => {
   "use strict";
   const S = {
@@ -25,8 +28,6 @@
     dashTimer: 0,
     metricsRefreshSeconds: 2,
     sign: [],
-    lagrangeVersions: [],
-    lagrangeDefaultStable: "",
     confirm: null,
     confirmResolve: null,
     confirmMode: "confirm",
@@ -205,7 +206,7 @@
     "panelLogMaxMB",
     "panelUpdateTitle",
     "panelUpdateCheckBtn",
-    "panelUpdateApplyBtn",
+    "panelUpdateDownloadLink",
     "panelUpdateStatus",
     "panelLogsClearBtn",
     "panelMetricsRefreshLabel",
@@ -353,9 +354,7 @@
     return !v || v === k ? fb : v;
   };
   function c() {
-    IDS.forEach((id) => {
-      E[id] = $(id) || document.createElement("div");
-    });
+    IDS.forEach((id) => (E[id] = $(id)));
     [
       "dashSystemCpu",
       "dashSystemLoad",
@@ -486,7 +485,7 @@
     return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
   };
   const tx = (k, f = "") =>
-    typeof window.text === "function" ? window.text(k, f || k) : f || k;
+    typeof window.text === "function" ? window.text(k, f) : f;
   window.tx = tx;
   const portValidation =
     window.SealPortValidation && window.SealPortValidation.createPortValidation
@@ -832,9 +831,15 @@
     if (E.panelLogRetentionLabel)
       E.panelLogRetentionLabel.textContent = tx("panel.settings.log_retention");
     if (E.panelLogRetentionDaysLabel)
-      E.panelLogRetentionDaysLabel.textContent = TXT_SAFE("panel.settings.log_retention_days","");
+      E.panelLogRetentionDaysLabel.textContent = TXT_SAFE(
+        "panel.settings.log_retention_days",
+        "日志保留天数",
+      );
     if (E.panelLogMaxMBLabel)
-      E.panelLogMaxMBLabel.textContent = TXT_SAFE("panel.settings.log_max_mb", "");
+      E.panelLogMaxMBLabel.textContent = TXT_SAFE(
+        "panel.settings.log_max_mb",
+        "日志最大占用（MB）",
+      );
     if (E.panelMetricsRefreshLabel)
       E.panelMetricsRefreshLabel.textContent = tx(
         "panel.settings.metrics_refresh",
@@ -880,13 +885,22 @@
     if (E.panelLogsClearBtn)
       E.panelLogsClearBtn.textContent = tx("panel.settings.logs_clear_all");
     if (E.panelUpdateTitle)
-      E.panelUpdateTitle.textContent = TXT_SAFE("panel.update.title","");
+      E.panelUpdateTitle.textContent = TXT_SAFE("panel.update.title", "更新");
     if (E.panelUpdateCheckBtn)
-      E.panelUpdateCheckBtn.textContent = TXT_SAFE("panel.update.check","");
-    if (E.panelUpdateApplyBtn)
-      E.panelUpdateApplyBtn.textContent = TXT_SAFE("panel.update.apply","");
+      E.panelUpdateCheckBtn.textContent = TXT_SAFE(
+        "panel.update.check",
+        "检查更新",
+      );
+    if (E.panelUpdateDownloadLink)
+      E.panelUpdateDownloadLink.textContent = TXT_SAFE(
+        "panel.update.download",
+        "打开下载地址",
+      );
     if (E.panelUpdateStatus)
-      E.panelUpdateStatus.textContent = TXT_SAFE("panel.update.idle","");
+      E.panelUpdateStatus.textContent = TXT_SAFE(
+        "panel.update.idle",
+        "点击“检查更新”获取最新版本信息。",
+      );
     if (panelLoginProtectMaxAttemptsLabel)
       panelLoginProtectMaxAttemptsLabel.textContent = tx(
         "panel.settings.login_protect_max_attempts",
@@ -911,7 +925,10 @@
     E.createSub.textContent = tx("create.subtitle");
     E.createCloseBtn.textContent = tx("action.close");
     if (E.createBaseInfoTitle)
-      E.createBaseInfoTitle.textContent = TXT_SAFE("create.group.basic","");
+      E.createBaseInfoTitle.textContent = TXT_SAFE(
+        "create.group.basic",
+        "服务基础信息",
+      );
     E.createTypeLabel.textContent = tx("create.type.label");
     E.createRegistryLabel.textContent = tx("create.registry.label");
     E.createDisplayLabel.textContent = tx("create.display.label");
@@ -1970,7 +1987,10 @@
   }
 
   /**
-   * ?   * ?   * ?app-settings-center.js ?   */
+   * 配置中心委托包装函数。
+   * 保留这些同名入口，是为了不破坏已有事件绑定与调用路径；
+   * 真正的配置中心逻辑在 app-settings-center.js 中实现。
+   */
   async function setOpen() {
     if (settingsCenterApi && typeof settingsCenterApi.setOpen === "function") {
       return settingsCenterApi.setOpen();
@@ -2056,8 +2076,14 @@
         d.config_path || "config.yaml",
       );
       if (E.panelUpdateStatus)
-        E.panelUpdateStatus.textContent = TXT_SAFE("panel.update.idle","");
-      if (E.panelUpdateApplyBtn) E.panelUpdateApplyBtn.disabled = true;
+        E.panelUpdateStatus.textContent = TXT_SAFE(
+          "panel.update.idle",
+          "点击“检查更新”获取最新版本信息。",
+        );
+      if (E.panelUpdateDownloadLink) {
+        E.panelUpdateDownloadLink.classList.add("hidden");
+        E.panelUpdateDownloadLink.removeAttribute("href");
+      }
       S.disableHTTPSWarning = !!c.disable_https_warning;
       updateHTTPSNotice();
     } catch (e) {
@@ -2076,14 +2102,23 @@
     S.update.result = d || null;
     if (E.shellVersion) E.shellVersion.classList.toggle("has-update", hasUpdate);
     const statusText = hasUpdate
-      ? TXT_SAFE("panel.update.available","")
-      : TXT_SAFE("panel.update.latest","");
+      ? TXT_SAFE("panel.update.available", "发现新版本")
+      : TXT_SAFE("panel.update.latest", "当前已是最新版本");
     E.panelUpdateStatus.textContent =
       `${statusText}\n` +
-      `${TXT_SAFE("panel.update.local","")}: ${local}\n` +
-      `${TXT_SAFE("panel.update.remote","")}: ${remote}\n` +
-      `${TXT_SAFE("panel.update.source","")}: ${source}`;
-    if (E.panelUpdateApplyBtn) E.panelUpdateApplyBtn.disabled = !hasUpdate;
+      `${TXT_SAFE("panel.update.local", "本地版本")}: ${local}\n` +
+      `${TXT_SAFE("panel.update.remote", "远端版本")}: ${remote}\n` +
+      `${TXT_SAFE("panel.update.source", "检测来源")}: ${source}`;
+    if (E.panelUpdateDownloadLink) {
+      const url = String(d.download_url || "").trim();
+      if (url) {
+        E.panelUpdateDownloadLink.href = url;
+        E.panelUpdateDownloadLink.classList.remove("hidden");
+      } else {
+        E.panelUpdateDownloadLink.classList.add("hidden");
+        E.panelUpdateDownloadLink.removeAttribute("href");
+      }
+    }
   }
 
   async function panelCheckUpdate() {
@@ -2091,56 +2126,26 @@
     try {
       E.panelUpdateCheckBtn.disabled = true;
       if (E.panelUpdateStatus)
-        E.panelUpdateStatus.textContent = TXT_SAFE("panel.update.checking","");
+        E.panelUpdateStatus.textContent = TXT_SAFE(
+          "panel.update.checking",
+          "正在检查更新...",
+        );
       const d = await j("update/check");
       renderUpdateCheckResult(d || {});
       if (d && d.has_update) {
-        toast(TXT_SAFE("panel.update.toast.available",""), "ok");
+        toast(TXT_SAFE("panel.update.toast.available", "发现新版本"), "ok");
       } else {
-        toast(TXT_SAFE("panel.update.toast.latest",""), "ok");
+        toast(TXT_SAFE("panel.update.toast.latest", "当前已是最新版本"), "ok");
       }
     } catch (e) {
       if (E.panelUpdateStatus)
-        E.panelUpdateStatus.textContent = TXT_SAFE("panel.update.failed","");
-      toast(e.message || TXT_SAFE("panel.update.failed",""), "error");
+        E.panelUpdateStatus.textContent = TXT_SAFE(
+          "panel.update.failed",
+          "更新检查失败",
+        );
+      toast(e.message || TXT_SAFE("panel.update.failed", "更新检查失败"), "error");
     } finally {
       E.panelUpdateCheckBtn.disabled = false;
-    }
-  }
-
-  async function panelApplyUpdate() {
-    if (!E.panelUpdateApplyBtn) return;
-    try {
-      E.panelUpdateApplyBtn.disabled = true;
-      if (E.panelUpdateStatus)
-        E.panelUpdateStatus.textContent = TXT_SAFE("panel.update.applying","");
-      const d = await j("update/apply", { method: "POST" });
-      if (d && d.updated) {
-        if (E.panelUpdateStatus)
-          E.panelUpdateStatus.textContent = TXT_SAFE("panel.update.applied","");
-        toast(
-          TXT_SAFE("panel.update.applied",""),
-          "ok",
-        );
-        S.update.hasUpdate = false;
-        if (E.shellVersion) E.shellVersion.classList.remove("has-update");
-      } else {
-        if (E.panelUpdateStatus)
-          E.panelUpdateStatus.textContent = TXT_SAFE("panel.update.latest","");
-        toast(
-          TXT_SAFE("panel.update.latest",""),
-          "info",
-        );
-      }
-    } catch (e) {
-      if (E.panelUpdateStatus)
-        E.panelUpdateStatus.textContent = TXT_SAFE("panel.update.apply_failed","");
-      toast(
-        e.message || TXT_SAFE("panel.update.apply_failed",""),
-        "error",
-      );
-    } finally {
-      E.panelUpdateApplyBtn.disabled = !S.update.hasUpdate;
     }
   }
 
@@ -2149,7 +2154,8 @@
       const d = await j("update/check");
       renderUpdateCheckResult(d || {});
     } catch (_) {
-      // ?    }
+      // 启动时静默检查失败不打扰用户；手动点击检查会显示错误。
+    }
   }
   async function panelSaveForm() {
     try {
@@ -2184,9 +2190,9 @@
       if (!Number.isInteger(retention) || retention < 1 || retention > 365)
         throw new Error(tx("panel.settings.invalid_log_retention"));
       if (!Number.isInteger(retentionDays) || retentionDays < 1 || retentionDays > 3650)
-        throw new Error(TXT_SAFE("panel.settings.invalid_log_retention_days",""));
+        throw new Error(TXT_SAFE("panel.settings.invalid_log_retention_days", "日志保留天数无效"));
       if (!Number.isInteger(logMaxMB) || logMaxMB < 16 || logMaxMB > 1024 * 1024)
-        throw new Error(TXT_SAFE("panel.settings.invalid_log_max_mb",""));
+        throw new Error(TXT_SAFE("panel.settings.invalid_log_max_mb", "日志最大占用无效"));
       if (!Number.isInteger(refresh) || refresh < 1 || refresh > 3600)
         throw new Error(tx("panel.settings.invalid_metrics_refresh"));
       if (!Number.isInteger(uploadMax) || uploadMax < 1 || uploadMax > 4096)
@@ -2396,37 +2402,18 @@
   }
   function createCard(title, bodyHTML, note = "") {
     return `<section class="stack-block card-block config-card"><h3>${title}</h3>${bodyHTML}${note ? `<p class="muted create-card-note">${note}</p>` : ""}</section>`;
-  }  function createSealdiceUI() {
-    const body = `<div class="form-grid config-grid"><div><label>${tx("create.source.label")}</label><select id="sealSource"><option value="auto" selected>${tx("create.source.auto")}</option><option value="upload">${tx("create.source.upload")}</option><option value="url">${TXT_SAFE("create.source.url","")}</option></select></div><div><label>${tx("create.webui_port.label")}</label><input id="sealPort" type="number" min="1" max="65535" value="3211"><div id="sealPortHint" class="port-hint"></div></div><div id="sealUrlWrap" class="hidden config-span-full"><label>${tx("create.sealdice.url")}</label><input id="sealURL" type="text" value=""></div><div id="sealUploadWrap" class="hidden config-span-full"><label>${tx("create.sealdice.package")}</label><input id="sealPackage" type="file" accept=".zip,.tar,.gz,.tgz"></div></div>`;
+  }
+  function createSealdiceUI() {
+    const body = `<div class="form-grid config-grid"><div><label>${tx("create.source.label")}</label><select id="sealSource"><option value="auto">${tx("create.source.auto")}</option><option value="upload">${tx("create.source.upload")}</option></select></div><div><label>${tx("create.webui_port.label")}</label><input id="sealPort" type="number" min="1" max="65535" value="3211"><div id="sealPortHint" class="port-hint"></div></div><div id="sealUrlWrap" class="config-span-full"><label>${tx("create.sealdice.url")}</label><input id="sealURL" type="text" value="https://d1.sealdice.com/sealdice-core_1.5.1_linux_amd64.tar.gz"></div><div id="sealUploadWrap" class="hidden config-span-full"><label>${tx("create.sealdice.package")}</label><input id="sealPackage" type="file" accept=".zip,.tar,.gz,.tgz"></div></div>`;
     return createCard(
-      TXT_SAFE("create.group.deploy",""),
+      TXT_SAFE("create.group.deploy", "部署 / 运行配置"),
       body,
       tx("create.sealdice.notice"),
     );
   }
-  function lagrangeVersionOptions() {
-    if (!Array.isArray(S.lagrangeVersions) || !S.lagrangeVersions.length) {
-      return {
-        options: `<option value="latest" selected>${tx("create.lagrange.version.latest")}</option>`,
-        selected: "latest",
-      };
-    }
-    const selected =
-      String(S.lagrangeDefaultStable || S.lagrangeVersions[0].key || "latest").trim();
-    const options = S.lagrangeVersions
-      .map((it) => {
-        const key = String(it.key || it.version || "latest").trim();
-        const label = String(it.version || key || "latest").trim();
-        const tail = it.is_latest ? ` (${tx("create.lagrange.version.latest")})` : "";
-        return `<option value="${esc(key)}" ${key === selected ? "selected" : ""}>${esc(label + tail)}</option>`;
-      })
-      .join("");
-    return { options, selected };
-  }
   function createLagrangeUI() {
     const x = signOpts("");
     const signItems = sortedSigns();
-    const lagVer = lagrangeVersionOptions();
     const verOpts = signItems
       .map((it, i) => {
         const v = it.version || String(i);
@@ -2434,20 +2421,20 @@
       })
       .join("");
     const deployCard = createCard(
-      TXT_SAFE("create.group.deploy",""),
-      `<div class="form-grid config-grid"><div><label>${tx("create.source.label")}</label><select id="lagSource"><option value="auto" selected>${tx("create.source.auto")}</option><option value="upload">${tx("create.source.upload")}</option><option value="url">${TXT_SAFE("create.source.url","")}</option></select></div><div class="config-span-full"><label>${tx("create.lagrange.version.label")}</label><select id="lagVersion">${lagVer.options}</select></div><div id="lagURLWrap" class="hidden config-span-full"><label>${TXT_SAFE("create.url.label","")}</label><input id="lagURL" type="text" value=""></div><div id="lagUploadWrap" class="hidden config-span-full"><label>${tx("create.lagrange.package")}</label><input id="lagPackage" type="file" accept=".zip"></div><div class="config-span-full"><div class="impl-grid"><div class="impl-card"><label class="checkbox-row checkbox-row-switch"><input id="lagEnableForward" class="force-on-switch" type="checkbox" checked disabled><span>${tx("create.lagrange.impl.forward.required")}</span></label><div id="lagForwardPortWrap" class="impl-port-wrap"><label>${tx("create.port.label")}</label><input id="lagPort" type="number" min="1" max="65535" value="3212"><div id="lagPortHint" class="port-hint"></div></div></div><div class="impl-card"><label class="checkbox-row checkbox-row-switch"><input id="lagEnableReverse" type="checkbox"><span>${tx("create.lagrange.impl.reverse")}</span></label><div id="lagReversePortWrap" class="impl-port-wrap hidden"><label>${tx("create.port.label")}</label><input id="lagReversePort" type="number" min="1" max="65535" value="3213"><div id="lagReversePortHint" class="port-hint"></div></div></div><div class="impl-card"><label class="checkbox-row checkbox-row-switch"><input id="lagEnableHTTP" type="checkbox"><span>${tx("create.lagrange.impl.http")}</span></label><div id="lagHTTPPortWrap" class="impl-port-wrap hidden"><label>${tx("create.port.label")}</label><input id="lagHTTPPort" type="number" min="1" max="65535" value="3214"><div id="lagHTTPPortHint" class="port-hint"></div></div></div></div></div></div>`,
+      TXT_SAFE("create.group.deploy", "部署 / 运行配置"),
+      `<div class="form-grid config-grid"><div><label>${tx("create.source.label")}</label><select id="lagSource"><option value="upload" selected>${tx("create.source.upload")}</option><option value="auto">${tx("create.source.auto")}</option></select></div><div class="config-span-full"><label>${tx("create.lagrange.version.label")}</label><select id="lagVersion"><option value="old" selected>${tx("create.lagrange.version.old")}</option><option value="latest">${tx("create.lagrange.version.latest")}</option></select></div><div id="lagUploadWrap" class="config-span-full"><label>${tx("create.lagrange.package")}</label><input id="lagPackage" type="file" accept=".zip"></div><div id="lagAutoWrap" class="config-span-full hidden"><label>${tx("create.lagrange.download_prefix")}</label><input id="lagDownloadPrefix" type="text" value=""></div><div class="config-span-full"><div class="impl-grid"><div class="impl-card"><label class="checkbox-row checkbox-row-switch"><input id="lagEnableForward" class="force-on-switch" type="checkbox" checked disabled><span>${tx("create.lagrange.impl.forward.required")}</span></label><div id="lagForwardPortWrap" class="impl-port-wrap"><label>${tx("create.port.label")}</label><input id="lagPort" type="number" min="1" max="65535" value="3212"><div id="lagPortHint" class="port-hint"></div></div></div><div class="impl-card"><label class="checkbox-row checkbox-row-switch"><input id="lagEnableReverse" type="checkbox"><span>${tx("create.lagrange.impl.reverse")}</span></label><div id="lagReversePortWrap" class="impl-port-wrap hidden"><label>${tx("create.port.label")}</label><input id="lagReversePort" type="number" min="1" max="65535" value="3213"><div id="lagReversePortHint" class="port-hint"></div></div></div><div class="impl-card"><label class="checkbox-row checkbox-row-switch"><input id="lagEnableHTTP" type="checkbox"><span>${tx("create.lagrange.impl.http")}</span></label><div id="lagHTTPPortWrap" class="impl-port-wrap hidden"><label>${tx("create.port.label")}</label><input id="lagHTTPPort" type="number" min="1" max="65535" value="3214"><div id="lagHTTPPortHint" class="port-hint"></div></div></div></div></div></div>`,
       tx("create.lagrange.notice"),
     );
     const signCard = createCard(
-      TXT_SAFE("create.group.sign",""),
+      TXT_SAFE("create.group.sign", "签名相关"),
       `<div class="form-grid config-grid"><div><label>${tx("create.lagrange.sign.version.label")}</label><select id="lagSignVersion">${verOpts}<option value="custom">${tx("create.sign.custom")}</option></select></div><div id="lagSignServerSelectWrap"><label>${tx("create.lagrange.sign.label")}</label><select id="lagSignServer">${srvOpts(x.ver, x.srv)}</select></div><div id="lagSignServerCustomWrap" class="hidden"><label>${tx("create.lagrange.sign.custom_url")}</label><input id="lagSignCustom" type="text" placeholder="${tx("create.lagrange.sign.custom_placeholder")}"></div><div class="config-span-full inline-tools"><button id="lagSignProbeBtn" class="btn btn-soft" type="button">${tx("create.lagrange.sign.test_all")}</button><button id="lagSignProbeCustomBtn" class="btn btn-soft hidden" type="button">${tx("create.lagrange.sign.test_one")}</button><div id="lagSignProbeResult" class="muted"></div></div></div>`,
     );
     return deployCard + signCard;
   }
   function createLLBotUI() {
-    const body = `<div class="form-grid config-grid"><div><label>${tx("create.source.label")}</label><select id="llSource"><option value="auto" selected>${tx("create.source.auto")}</option><option value="upload">${tx("create.source.upload")}</option><option value="url">${TXT_SAFE("create.source.url","")}</option></select></div><div><label>${tx("create.llbot.version.label")}</label><select id="llVersion"><option value="latest">latest</option></select></div><div><label>${tx("create.webui_port.label")}</label><input id="llPort" type="number" min="1" max="65535" value="3215"><div id="llPortHint" class="port-hint"></div></div><div id="llURLWrap" class="hidden config-span-full"><label>${TXT_SAFE("create.url.label","")}</label><input id="llURL" type="text" value=""></div><div id="llUploadWrap" class="hidden config-span-full"><label>${tx("create.llbot.package")}</label><input id="llPackage" type="file" accept=".zip"></div><div class="config-span-full"><button id="llQQManageBtn" class="btn btn-soft" type="button">${tx("create.llbot.qq_manage")}</button></div></div>`;
+    const body = `<div class="form-grid config-grid"><div><label>${tx("create.source.label")}</label><select id="llSource"><option value="auto">${tx("create.source.auto")}</option><option value="upload">${tx("create.source.upload")}</option></select></div><div><label>${tx("create.llbot.version.label")}</label><select id="llVersion"><option value="latest">latest</option></select></div><div><label>${tx("create.webui_port.label")}</label><input id="llPort" type="number" min="1" max="65535" value="3215"><div id="llPortHint" class="port-hint"></div></div><div id="llUploadWrap" class="hidden config-span-full"><label>${tx("create.llbot.package")}</label><input id="llPackage" type="file" accept=".zip"></div><div class="config-span-full"><button id="llQQManageBtn" class="btn btn-soft" type="button">${tx("create.llbot.qq_manage")}</button></div></div>`;
     return createCard(
-      TXT_SAFE("create.group.deploy",""),
+      TXT_SAFE("create.group.deploy", "部署 / 运行配置"),
       body,
       LLN(),
     );
@@ -2457,11 +2444,6 @@
     if (t === "Sealdice") return createSealdiceUI();
     if (t === "Lagrange") return createLagrangeUI();
     return createLLBotUI();
-  }
-  function sourceLabel(v) {
-    if (v === "upload") return tx("create.source.upload");
-    if (v === "url") return TXT_SAFE("create.source.url","");
-    return tx("create.source.auto");
   }
   function sum() {
     const t = E.createType.value,
@@ -2491,7 +2473,9 @@
       L.push(
         tx("create.type.summary.source").replace(
           "{value}",
-          sourceLabel($("sealSource").value),
+          $("sealSource").value === "upload"
+            ? tx("create.source.upload")
+            : tx("create.source.auto"),
         ),
       );
       L.push(
@@ -2531,7 +2515,9 @@
       L.push(
         tx("create.type.summary.source").replace(
           "{value}",
-          sourceLabel($("llSource").value),
+          $("llSource").value === "upload"
+            ? tx("create.source.upload")
+            : tx("create.source.auto"),
         ),
       );
       L.push(
@@ -2560,22 +2546,23 @@
         x.oninput = sum;
       });
       $("sealSource").onchange = () => {
-        const mode = $("sealSource").value;
         $("sealUploadWrap").classList.toggle(
           "hidden",
-          mode !== "upload",
+          $("sealSource").value !== "upload",
         );
-        $("sealUrlWrap").classList.toggle("hidden", mode !== "url");
+        $("sealUrlWrap").classList.toggle(
+          "hidden",
+          $("sealSource").value === "upload",
+        );
         sum();
       };
       bindPortFieldRealtime("sealPort", "sealPortHint", "");
-      $("sealSource").onchange();
     } else if (t === "Lagrange") {
       [
         "lagSource",
         "lagVersion",
         "lagPackage",
-        "lagURL",
+        "lagDownloadPrefix",
         "lagPort",
         "lagEnableReverse",
         "lagReversePort",
@@ -2603,9 +2590,9 @@
         $("lagSignProbeCustomBtn").classList.toggle("hidden", !custom);
       };
       const refreshLagrangeSource = () => {
-        const mode = $("lagSource").value;
-        $("lagUploadWrap").classList.toggle("hidden", mode !== "upload");
-        $("lagURLWrap").classList.toggle("hidden", mode !== "url");
+        const upload = $("lagSource").value === "upload";
+        $("lagUploadWrap").classList.toggle("hidden", !upload);
+        $("lagAutoWrap").classList.toggle("hidden", upload);
       };
 
       const refreshSignServers = async () => {
@@ -2676,19 +2663,16 @@
       const src = $("llSource");
 
       const llUploadWrap = $("llUploadWrap");
-      const llURLWrap = $("llURLWrap");
       S.createGetSignURL = null;
       $("llSource").onchange = () => {
-        const mode = src.value;
-        llUploadWrap.classList.toggle("hidden", mode !== "upload");
-        if (llURLWrap) llURLWrap.classList.toggle("hidden", mode !== "url");
+        const upload = src.value === "upload";
+        llUploadWrap.classList.toggle("hidden", !upload);
 
         sum();
       };
       $("llPort").oninput = sum;
       $("llVersion").onchange = sum;
       $("llSource").oninput = sum;
-      if ($("llURL")) $("llURL").oninput = sum;
 
       if ($("llPackage")) $("llPackage").onchange = sum;
       $("llQQManageBtn").onclick = () => qqOpen(true);
@@ -2792,9 +2776,8 @@
         const chk = await validatePortField("sealPort", "sealPortHint", "");
         if (!chk.ok) throw new Error(chk.message || tx("error.invalid_port"));
         const port = chk.port;
-        const source = String($("sealSource").value || "auto").trim();
         await showWarning(tx("notice.cloud_port"));
-        if (source === "upload") {
+        if ($("sealSource").value === "upload") {
           const f = $("sealPackage").files[0];
           if (!f) throw new Error(tx("toast.choose_archive_first"));
           const fd = new FormData();
@@ -2809,15 +2792,11 @@
           ].forEach(([k, v]) => fd.append(k, v));
           fd.append("package", f);
           r = await j("deploy/sealdice/upload", { method: "POST", body: fd });
-        } else {
-          if (source === "url" && !$("sealURL").value.trim()) {
-            throw new Error(TXT_SAFE("create.url.required",""));
-          }
+        } else
           r = await j("deploy/sealdice/auto", {
             method: "POST",
             body: JSON.stringify({
-              source,
-              url: source === "url" ? $("sealURL").value.trim() : "",
+              url: $("sealURL").value.trim(),
               registry_name: id,
               display_name: name,
               port,
@@ -2825,7 +2804,6 @@
               restart: rs,
             }),
           });
-        }
       } else if (t === "Lagrange") {
         const pForward = await validatePortField("lagPort", "lagPortHint", "");
         if (!pForward.ok)
@@ -2852,11 +2830,10 @@
             throw new Error(pHTTP.message || tx("error.invalid_port"));
           httpPort = pHTTP.port;
         }
-        const source = String($("lagSource").value || "auto").trim();
         const signURL = String((S.createGetSignURL && S.createGetSignURL()) || "").trim();
         if (!signURL) throw new Error(tx("create.lagrange.no_servers"));
         await showWarning(tx("notice.cloud_port"));
-        if (source === "upload") {
+        if ($("lagSource").value === "upload") {
           const f = $("lagPackage").files[0];
           if (!f) throw new Error(tx("toast.choose_archive_first"));
           const fd = new FormData();
@@ -2878,18 +2855,14 @@
           fd.append("package", f);
           r = await j("deploy/lagrange/upload", { method: "POST", body: fd });
         } else {
-          if (source === "url" && !String($("lagURL").value || "").trim()) {
-            throw new Error(TXT_SAFE("create.url.required",""));
-          }
           r = await j("deploy/lagrange/auto", {
             method: "POST",
             body: JSON.stringify({
               registry_name: id,
               display_name: name,
               auto_start: auto,
-              source,
               version: $("lagVersion").value,
-              download_url: source === "url" ? String($("lagURL").value || "").trim() : "",
+              download_prefix: String($("lagDownloadPrefix").value || "").trim(),
               port: pForward.port,
               enable_forward_ws: true,
               forward_ws_port: pForward.port,
@@ -2908,12 +2881,11 @@
           qqOpen(true);
           throw new Error(tx("qq.modal.need_before_deploy"));
         }
-        const source = String($("llSource").value || "auto").trim();
         const chk = await validatePortField("llPort", "llPortHint", "");
         if (!chk.ok) throw new Error(chk.message || tx("error.invalid_port"));
         const port = chk.port;
         await showWarning(tx("notice.cloud_port"));
-        if (source === "upload") {
+        if ($("llSource").value === "upload") {
           const f = $("llPackage").files[0];
           if (!f) throw new Error(tx("toast.choose_archive_first"));
           const fd = new FormData();
@@ -2929,16 +2901,11 @@
           fd.append("package", f);
           r = await j("deploy/llbot/upload", { method: "POST", body: fd });
         } else {
-          if (source === "url" && !String($("llURL").value || "").trim()) {
-            throw new Error(TXT_SAFE("create.url.required",""));
-          }
           r = await j("deploy/llbot/auto", {
             method: "POST",
             body: JSON.stringify({
               registry_name: id,
               display_name: name,
-              source,
-              url: source === "url" ? String($("llURL").value || "").trim() : "",
               port,
               auto_start: auto,
               version: $("llVersion").value,
@@ -3084,8 +3051,11 @@
       if (source === "upload") {
         const useUpload = await openConfirmDialog({
           title: tx("detail.rebuild"),
-          message: tx("confirm.rebuild_upload_source"),
-          submitText: tx("confirm.rebuild_use_upload"),
+          message: tx(
+            "confirm.rebuild_upload_source",
+            "该服务来自你上传的安装包。确定：按上传包重建；关闭：改为自动下载重建。",
+          ),
+          submitText: tx("confirm.rebuild_use_upload", "使用上传来源"),
           danger: true,
           showCancel: true,
           warning: false,
@@ -3095,8 +3065,11 @@
         } else {
           const useAuto = await openConfirmDialog({
             title: tx("detail.rebuild"),
-            message: tx("confirm.rebuild_use_auto_desc"),
-            submitText: tx("confirm.rebuild_use_auto"),
+            message: tx(
+              "confirm.rebuild_use_auto_desc",
+              "将改用直接下载重建，是否继续？",
+            ),
+            submitText: tx("confirm.rebuild_use_auto", "使用直接下载"),
             danger: false,
             showCancel: true,
             warning: true,
@@ -3124,14 +3097,6 @@
       S.sign = Array.isArray(d.items) ? d.items : [];
     } catch (_) {
       S.sign = [];
-    }
-    try {
-      const d = await j("deploy/lagrange/versions");
-      S.lagrangeVersions = Array.isArray(d.items) ? d.items : [];
-      S.lagrangeDefaultStable = String(d.default_stable || "").trim();
-    } catch (_) {
-      S.lagrangeVersions = [];
-      S.lagrangeDefaultStable = "";
     }
   }
   function bind() {
@@ -3385,14 +3350,13 @@
     E.panelConfigSaveBtn.onclick = panelSaveForm;
     E.panelRawSaveBtn.onclick = panelSaveRaw;
     if (E.panelUpdateCheckBtn) E.panelUpdateCheckBtn.onclick = panelCheckUpdate;
-    if (E.panelUpdateApplyBtn) E.panelUpdateApplyBtn.onclick = panelApplyUpdate;
     if (E.shellVersion) {
       E.shellVersion.onclick = () => {
         if (S.update.hasUpdate) {
           view("settings");
           return;
         }
-        toast(TXT_SAFE("panel.update.latest",""), "info");
+        toast(TXT_SAFE("panel.update.latest", "当前已是最新版本"), "info");
       };
     }
     E.editorText.oninput = () => {
@@ -3466,69 +3430,16 @@
       openSvc(id);
     }
   }
-  function bindAuthOnly() {
-    const initBtn = $("initSubmit");
-    const loginBtn = $("loginSubmit");
-    const initPwd = $("initPassword");
-    const loginPwd = $("loginPassword");
-    if (initBtn && initPwd) {
-      initBtn.onclick = async () => {
-        try {
-          await j("auth/init", {
-            method: "POST",
-            body: JSON.stringify({ password: initPwd.value }),
-          });
-          await j("auth/login", {
-            method: "POST",
-            body: JSON.stringify({ password: initPwd.value }),
-          });
-          await enter();
-        } catch (e) {
-          toast(e.message || String(e), "error");
-        }
-      };
-      initPwd.onkeydown = (e) => {
-        if (e.key === "Enter") initBtn.click();
-      };
-    }
-    if (loginBtn && loginPwd) {
-      loginBtn.onclick = async () => {
-        try {
-          await j("auth/login", {
-            method: "POST",
-            body: JSON.stringify({ password: loginPwd.value }),
-          });
-          await enter();
-        } catch (e) {
-          toast(e.message || String(e), "error");
-        }
-      };
-      loginPwd.onkeydown = (e) => {
-        if (e.key === "Enter") loginBtn.click();
-      };
-    }
-  }
   async function boot() {
     c();
-    // 启动兜底：先展示登录卡片，避免任何初始化异常导致整页空白。
-    show(E.authLogin);
-    bindAuthOnly();
     initSettingsCenter();
     if (window.textReady && typeof window.textReady.then === "function") {
       try {
         await window.textReady;
       } catch (_) {}
     }
-    try {
-      labels();
-      bind();
-    } catch (e) {
-      bindAuthOnly();
-      toast(
-        `${tx("toast.init_failed", "初始化失败")}: ${e.message || String(e)}`,
-        "error",
-      );
-    }
+    labels();
+    bind();
     try {
       const b = await j("bootstrap/status");
       if (E.shellVersion && b) {
@@ -3560,6 +3471,4 @@
     if (S.qq.timer) clearInterval(S.qq.timer);
   });
   document.addEventListener("DOMContentLoaded", boot);
-}
 })();
-
