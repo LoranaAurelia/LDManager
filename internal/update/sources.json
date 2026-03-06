@@ -1,10 +1,10 @@
 {
-  "default_manifest_source": "xuetao-main",
-  "default_download_source": "xuetao-main",
+  "default_manifest_source": "manifest_cource",
+  "default_download_source": "manifest_cource",
   "manifest_sources": [
     {
-      "id": "xuetao-main",
-      "name": "雪桃 Manifest 主站",
+      "id": "manifest_cource",
+      "name": "Manifest Cource",
       "type": "manifest",
       "url": "https://manifest.xuetao.host/LDM/latest.json",
       "timeout_seconds": 8
@@ -13,18 +13,18 @@
       "id": "github-release",
       "name": "GitHub Releases",
       "type": "github",
-      "repo": "LoranaAurelia/Web-Sealdice",
+      "repo": "LoranaAurelia/LDManager",
       "asset_name_contains": "ldm-linux-{arch}",
       "timeout_seconds": 8
     }
   ],
   "download_sources": [
     {
-      "id": "xuetao-main",
-      "name": "雪桃下载主站",
+      "id": "github-release",
+      "name": "GitHub Release Assets",
       "arch_urls": {
-        "amd64": "https://sdsh.xuetao.host/ldm-linux-amd64",
-        "arm64": "https://sdsh.xuetao.host/ldm-linux-arm64"
+        "amd64": "https://github.com/LoranaAurelia/LDManager/releases/latest/download/ldm-linux-amd64",
+        "arm64": "https://github.com/LoranaAurelia/LDManager/releases/latest/download/ldm-linux-arm64"
       }
     }
   ]

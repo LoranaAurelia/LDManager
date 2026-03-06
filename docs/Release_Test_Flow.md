@@ -22,7 +22,7 @@ go test ./internal/... ./cmd/...
 4. 构建 Linux 二进制：
 ```powershell
 $env:GOOS="linux"; $env:GOARCH="amd64"; $env:CGO_ENABLED="0"
-go build -o build/sealpanel-linux-amd64 ./cmd/sealpanel
+go build -o build/sealpanel-linux-amd64 ./cmd/ldmanager
 ```
 
 ## 2. 首次启动与登录链路

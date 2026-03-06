@@ -95,8 +95,8 @@ jobs:
           go test ./...
 
           echo "[4/5] Building Linux binaries (amd64 + arm64)..."
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "$ldflags" -o "$out_path_amd64" ./cmd/sealpanel
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "$ldflags" -o "$out_path_arm64" ./cmd/sealpanel
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "$ldflags" -o "$out_path_amd64" ./cmd/ldmanager
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "$ldflags" -o "$out_path_arm64" ./cmd/ldmanager
 
           echo "[5/5] Rendering installer script..."
           sed \

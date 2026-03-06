@@ -18,6 +18,3 @@ Thumbs.db
 Comment_Audit_PreRelease.md
 Frontend_AppJS_Refactor_Guide.md
 Frontend_AppJS_Refactor_Plan.md
-
-# Broken reserved-name artifact on Windows
-nul }

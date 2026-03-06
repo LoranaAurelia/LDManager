@@ -76,8 +76,6 @@ func Check(ctx context.Context, localVersion string, arch string) (CheckResult, 
 	if err != nil {
 		return CheckResult{}, err
 	}
-	downloadSrc, _ := cfg.DefaultDownload(arch)
-
 	manifest, err := fetchManifest(ctx, manifestSrc, arch)
 	if err != nil {
 		return CheckResult{}, err
@@ -93,8 +91,29 @@ func Check(ctx context.Context, localVersion string, arch string) (CheckResult, 
 	hasUpdate := compareNormalizedVersion(remoteComparable, localComparable) > 0
 
 	downloadURL := strings.TrimSpace(manifest.DownloadURL)
-	if downloadURL == "" && downloadSrc != nil {
-		downloadURL = downloadSrc.URL
+	downloadSourceID := manifestSrc.ID
+	downloadSourceName := manifestSrc.Name
+	downloadTarget := strings.TrimSpace(cfg.DefaultDownloadSource)
+
+	switch {
+	case downloadTarget == "" || downloadTarget == manifestSrc.ID:
+		// 默认情况：直接使用默认 manifest 源 latest.json 下发的下载地址。
+	case downloadTarget != "":
+		// 允许下载源与版本检测源分离：
+		// 1) 优先使用 download_sources 显式定义；
+		// 2) 若未命中，再尝试把目标当作 manifest source，抓取其下载地址。
+		if downloadSrc, err := cfg.DefaultDownload(arch); err == nil && downloadSrc != nil && strings.TrimSpace(downloadSrc.URL) != "" {
+			downloadURL = strings.TrimSpace(downloadSrc.URL)
+			downloadSourceID = downloadSrc.ID
+			downloadSourceName = downloadSrc.Name
+		} else if altManifestSrc, err := cfg.ManifestByID(downloadTarget); err == nil && altManifestSrc != nil {
+			altManifest, fetchErr := fetchManifest(ctx, altManifestSrc, arch)
+			if fetchErr == nil && strings.TrimSpace(altManifest.DownloadURL) != "" {
+				downloadURL = strings.TrimSpace(altManifest.DownloadURL)
+				downloadSourceID = altManifestSrc.ID
+				downloadSourceName = altManifestSrc.Name
+			}
+		}
 	}
 
 	result := CheckResult{
@@ -109,12 +128,10 @@ func Check(ctx context.Context, localVersion string, arch string) (CheckResult, 
 		ManifestType:     normalizeSourceType(manifestSrc.Type),
 		ManifestURL:      sourceURLForResult(manifestSrc),
 
-		DownloadURL: downloadURL,
+		DownloadSourceID: downloadSourceID,
+		DownloadSource:   downloadSourceName,
+		DownloadURL:      downloadURL,
 		Notes:       firstNonEmpty(manifest.ReleaseNotes, manifest.Notes),
-	}
-	if downloadSrc != nil {
-		result.DownloadSourceID = downloadSrc.ID
-		result.DownloadSource = downloadSrc.Name
 	}
 	return result, nil
 }
@@ -155,6 +172,30 @@ func (c SourcesConfig) DefaultManifest() (*ManifestSource, error) {
 		}
 	}
 	return nil, fmt.Errorf("default manifest source not found: %s", target)
+}
+
+func (c SourcesConfig) ManifestByID(id string) (*ManifestSource, error) {
+	target := strings.TrimSpace(id)
+	if target == "" {
+		return nil, fmt.Errorf("manifest source id is empty")
+	}
+	for i := range c.ManifestSources {
+		item := c.ManifestSources[i]
+		if strings.TrimSpace(item.ID) != target {
+			continue
+		}
+		if normalizeSourceType(item.Type) == "github" {
+			if strings.TrimSpace(item.Repo) == "" && strings.TrimSpace(item.APIURL) == "" {
+				return nil, fmt.Errorf("github source requires repo or api_url")
+			}
+			return &item, nil
+		}
+		if strings.TrimSpace(item.URL) == "" {
+			return nil, fmt.Errorf("manifest source url is empty")
+		}
+		return &item, nil
+	}
+	return nil, fmt.Errorf("manifest source not found: %s", target)
 }
 
 func (c SourcesConfig) DefaultDownload(arch string) (*DownloadSource, error) {
