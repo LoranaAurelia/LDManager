@@ -131,7 +131,7 @@ func Check(ctx context.Context, localVersion string, arch string) (CheckResult, 
 		DownloadSourceID: downloadSourceID,
 		DownloadSource:   downloadSourceName,
 		DownloadURL:      downloadURL,
-		Notes:       firstNonEmpty(manifest.ReleaseNotes, manifest.Notes),
+		Notes:            firstNonEmpty(manifest.ReleaseNotes, manifest.Notes),
 	}
 	return result, nil
 }
