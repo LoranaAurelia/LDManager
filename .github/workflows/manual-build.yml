@@ -1,0 +1,57 @@
+name: Manual Full Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Override VERSION (optional)"
+        required: false
+        default: ""
+      channel:
+        description: "Override CHANNEL (optional)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  build-linux-script:
+    name: Build via build-release.sh (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build
+        shell: bash
+        env:
+          VERSION: ${{ github.event.inputs.version }}
+          CHANNEL: ${{ github.event.inputs.channel }}
+        run: |
+          chmod +x ./build-release.sh
+          ./build-release.sh --skip-tests
+
+      - name: Upload artifacts (Linux job)
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-linux-script
+          path: |
+            dist/ldm-linux-amd64
+            dist/ldm-linux-arm64
+            dist/install-ldm.sh
+          if-no-files-found: error

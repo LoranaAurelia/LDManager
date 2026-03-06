@@ -1,0 +1,338 @@
+:root {
+  --bg: #0a0f18;
+  --bg-soft: #111827;
+  --panel: rgba(17, 24, 39, 0.9);
+  --line: rgba(148, 163, 184, 0.14);
+  --line-strong: rgba(125, 211, 252, 0.28);
+  --text: #eef2ff;
+  --muted: #9aa7c6;
+  --accent: #67d4ff;
+  --accent-2: #82ffc8;
+  --danger: #ff7998;
+  --warn: #ffda7a;
+  --ok: #67f0b1;
+  --shadow: 0 24px 70px rgba(0, 0, 0, 0.34);
+  --radius: 20px;
+}
+
+/* 基础重置 */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  color: var(--text);
+  font-size: 14px;
+  font-family:
+    "Noto Sans SC", "Source Han Sans SC", "Microsoft YaHei UI", "PingFang SC",
+    "Segoe UI", sans-serif;
+  background:
+    radial-gradient(
+      1100px 580px at 0% 0%,
+      rgba(103, 212, 255, 0.14),
+      transparent 65%
+    ),
+    radial-gradient(
+      960px 560px at 100% 0%,
+      rgba(130, 255, 200, 0.08),
+      transparent 58%
+    ),
+    linear-gradient(180deg, #08101a, #0b1220 34%, #0d1421);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* 按钮体系 */
+.btn {
+  appearance: none;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.05),
+    rgba(255, 255, 255, 0.015)
+  );
+  color: var(--text);
+  border-radius: 14px;
+  padding: 9px 13px;
+  font-weight: 700;
+  transition:
+    transform 0.15s ease,
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+  border-color: rgba(125, 211, 252, 0.3);
+}
+
+.btn:active {
+  transform: translateY(0);
+}
+
+.btn-primary {
+  color: #062231;
+  border-color: rgba(103, 212, 255, 0.8);
+  background: linear-gradient(180deg, #8ce5ff, #61c0ec);
+}
+
+.btn-danger {
+  color: #3f0f1d;
+  border-color: rgba(255, 121, 152, 0.8);
+  background: linear-gradient(180deg, #ff9bb5, #ff7998);
+}
+
+.btn-soft {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+/* 表单体系 */
+input,
+select,
+textarea {
+  width: 100%;
+  color: var(--text);
+  background: rgba(7, 13, 23, 0.82);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 14px;
+  padding: 10px 12px;
+  outline: none;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--line-strong);
+  box-shadow: 0 0 0 3px rgba(103, 212, 255, 0.08);
+}
+
+select {
+  appearance: none;
+  background: linear-gradient(
+    180deg,
+    rgba(10, 17, 30, 0.96),
+    rgba(9, 15, 26, 0.94)
+  );
+}
+
+option {
+  color: #111827;
+  background: #f8fafc;
+}
+
+label {
+  display: block;
+  margin-bottom: 8px;
+  color: #cfe1ff;
+  font-size: 0.92rem;
+}
+
+.checkbox-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 0;
+}
+
+.checkbox-row-switch {
+  gap: 12px;
+  width: 100%;
+  min-height: 46px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.checkbox-row-switch input[type="checkbox"] {
+  appearance: none;
+  position: relative;
+  width: 48px;
+  height: 28px;
+  margin: 0;
+  border: none;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  transition: background 0.18s ease;
+  flex: 0 0 auto;
+}
+
+.checkbox-row-switch input[type="checkbox"]::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+  transition: transform 0.18s ease;
+}
+
+.checkbox-row-switch input[type="checkbox"]:checked {
+  background: rgba(103, 212, 255, 0.8);
+}
+
+.checkbox-row-switch input[type="checkbox"]:checked::after {
+  transform: translateX(20px);
+}
+
+.checkbox-row-switch span {
+  color: var(--text);
+  font-weight: 600;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  width: auto;
+  accent-color: var(--accent);
+}
+
+.port-hint {
+  margin-top: 6px;
+  min-height: 18px;
+  font-size: 12px;
+  color: #9cc3db;
+}
+
+.port-hint.error {
+  color: #ff8ea7;
+}
+
+input.input-invalid,
+select.input-invalid {
+  border-color: rgba(255, 99, 132, 0.75) !important;
+  box-shadow: 0 0 0 2px rgba(255, 99, 132, 0.18);
+}
+
+/* 通用块 */
+.panel,
+.modal,
+.drawer,
+.sidebar,
+.auth-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(
+    180deg,
+    rgba(16, 24, 38, 0.95),
+    rgba(14, 22, 36, 0.92)
+  );
+  box-shadow: var(--shadow);
+}
+
+.section-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.section-head.compact {
+  align-items: flex-start;
+}
+
+.section-head h2,
+.section-head h3 {
+  margin: 0;
+}
+
+.stack-block + .stack-block {
+  margin-top: 16px;
+}
+
+.stack-block h3 {
+  margin: 0 0 12px;
+  font-size: 1rem;
+}
+
+.form-grid,
+.config-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.code-box {
+  margin: 0;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  background: #09111d;
+  color: #dbeafe;
+  padding: 14px;
+  white-space: pre-wrap;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.notice {
+  border-radius: 16px;
+  padding: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  margin-bottom: 12px;
+}
+
+.notice-warn {
+  background: rgba(255, 218, 122, 0.08);
+  border-color: rgba(255, 218, 122, 0.16);
+  color: #ffe9a8;
+}
+
+.empty-box {
+  border: 1px dashed rgba(148, 163, 184, 0.16);
+  border-radius: 18px;
+  padding: 28px;
+  text-align: center;
+  color: var(--muted);
+}
+
+/* 轻量动画 */
+@keyframes soft-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes soft-leave {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.ui-leave {
+  animation: soft-leave 0.14s ease forwards;
+}

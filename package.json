@@ -1,0 +1,13 @@
+{
+  "name": "loranas-dice-manager-assets",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Build-time asset sync for Lorana's Dice Manager",
+  "scripts": {
+    "sync:monaco": "node tools/sync-monaco.mjs",
+    "prepare:assets": "npm run sync:monaco"
+  },
+  "devDependencies": {
+    "prettier": "^3.8.1"
+  }
+}

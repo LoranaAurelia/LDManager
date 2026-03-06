@@ -1,0 +1,23 @@
+# Build outputs
+dist/
+
+# Dependency caches
+node_modules/
+.gocache/
+.gomodcache/
+.tmp/
+
+# Local backup/reference folders
+old/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+
+# Local scratch docs
+Comment_Audit_PreRelease.md
+Frontend_AppJS_Refactor_Guide.md
+Frontend_AppJS_Refactor_Plan.md
+
+# Broken reserved-name artifact on Windows
+nul }

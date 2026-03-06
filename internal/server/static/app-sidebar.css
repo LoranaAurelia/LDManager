@@ -1,0 +1,346 @@
+/* 登录页 */
+.auth-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.auth-card {
+  width: min(480px, 100%);
+  padding: 24px;
+}
+
+.auth-card h1 {
+  margin: 0 0 8px;
+  font-size: 1.4rem;
+}
+
+.auth-card .muted {
+  margin: 0 0 18px;
+}
+
+.auth-card .btn {
+  margin-top: 14px;
+  width: 100%;
+}
+
+/* 应用壳：侧栏 + 主区 */
+.app-shell {
+  display: grid;
+  grid-template-columns: 344px minmax(0, 1fr);
+  min-height: 100vh;
+  position: relative;
+  transition: grid-template-columns 0.18s ease;
+}
+
+.app-shell.sidebar-collapsed {
+  grid-template-columns: 0 minmax(0, 1fr);
+}
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  border-radius: 0;
+  border-left: none;
+  border-top: none;
+  border-bottom: none;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  overflow: visible;
+  background: linear-gradient(
+    180deg,
+    rgba(12, 18, 29, 0.98),
+    rgba(11, 17, 27, 0.96)
+  );
+  transition:
+    transform 0.18s ease,
+    opacity 0.18s ease;
+}
+
+.app-shell.sidebar-collapsed .sidebar {
+  transform: translateX(-104%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* 侧栏折叠按钮 */
+.sidebar-float-toggle {
+  position: fixed;
+  top: 0;
+  left: calc(344px - 1px);
+  z-index: 125;
+  width: 28px;
+  height: 58px;
+  min-width: 28px;
+  padding: 0;
+  border-radius: 0 14px 14px 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(
+    180deg,
+    rgba(12, 18, 29, 0.98),
+    rgba(11, 17, 27, 0.96)
+  );
+  border-color: rgba(148, 163, 184, 0.24);
+  border-left: none;
+  box-shadow: 10px 14px 28px rgba(0, 0, 0, 0.24);
+  color: transparent;
+  font-size: 0;
+  line-height: 0;
+  overflow: hidden;
+  transition:
+    left 0.18s ease,
+    transform 0.16s ease,
+    background 0.16s ease,
+    border-color 0.16s ease;
+}
+
+.sidebar-float-toggle::before {
+  content: "‹";
+  font-size: 18px;
+  line-height: 1;
+  color: #d7e8ff;
+}
+
+.app-shell.sidebar-collapsed .sidebar-float-toggle {
+  left: 0;
+  border-left: 1px solid rgba(148, 163, 184, 0.24);
+}
+
+.app-shell.sidebar-collapsed .sidebar-float-toggle::before {
+  content: "›";
+}
+
+.app-shell.overlay-open .sidebar-float-toggle {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-8px);
+}
+
+/* 快速状态卡片 */
+.sidebar-mini-card {
+  margin: 4px 0 14px;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(103, 212, 255, 0.14);
+  background: linear-gradient(
+    165deg,
+    rgba(103, 212, 255, 0.08),
+    rgba(130, 255, 200, 0.04)
+  );
+}
+
+.sidebar-mini-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 9px;
+}
+
+.sidebar-mini-title {
+  font-size: 1.04rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  color: #eef6ff;
+}
+
+.sidebar-mini-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #dbe9ff;
+  font-size: 0.82rem;
+}
+
+.sidebar-mini-bars {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sidebar-mini-bar {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  font-size: 0.76rem;
+}
+
+.sidebar-mini-track {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.09);
+  overflow: hidden;
+}
+
+.sidebar-mini-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #67d4ff, #82ffc8);
+  transition: width 0.28s ease;
+}
+
+/* 侧栏导航 */
+.sidebar-nav {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.nav-btn {
+  width: 100%;
+  min-height: 50px;
+  text-align: left;
+  padding: 12px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.04),
+    rgba(255, 255, 255, 0.018)
+  );
+  font-weight: 700;
+}
+
+.nav-btn.active,
+.nav-btn:hover {
+  border-color: rgba(103, 212, 255, 0.32);
+  background: rgba(103, 212, 255, 0.07);
+}
+
+.service-nav-block {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 22px;
+  overflow: clip;
+  background: rgba(255, 255, 255, 0.022);
+}
+
+.service-nav-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+}
+
+.service-nav-main,
+.service-nav-toggle {
+  border-radius: 0;
+  border: none;
+}
+
+.service-nav-main {
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.service-nav-toggle {
+  text-align: center;
+  min-height: 50px;
+  padding: 0;
+}
+
+.service-nav-toggle::before {
+  content: "▾";
+  color: var(--muted);
+  display: inline-block;
+  transition:
+    transform 0.16s ease,
+    color 0.16s ease;
+}
+
+.service-nav-toggle:not(.is-open)::before {
+  transform: rotate(-90deg);
+}
+
+.service-tree-wrap {
+  border-top: 1px solid rgba(148, 163, 184, 0.08);
+  background: rgba(255, 255, 255, 0.012);
+  padding: 10px;
+}
+
+.service-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 42vh;
+  overflow: auto;
+}
+
+.tree-category {
+  border: 1px solid rgba(148, 163, 184, 0.06);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.tree-category-btn {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border: none;
+  background: rgba(255, 255, 255, 0.012);
+  color: #dbeafe;
+  font-weight: 700;
+}
+
+.tree-item {
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  text-align: left;
+  width: 100%;
+  padding: 9px 12px 9px 18px;
+  background: transparent;
+  color: var(--muted);
+  border-top: 1px solid rgba(148, 163, 184, 0.06);
+}
+
+.tree-item.active,
+.tree-item:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.028);
+}
+
+/* 侧栏底部 */
+.sidebar-footer {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.status-banner,
+.status-persistent-warn {
+  border-radius: 16px;
+  padding: 10px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.status-banner {
+  min-height: 48px;
+  background: rgba(103, 212, 255, 0.08);
+  color: #dcf6ff;
+}
+
+.status-persistent-warn {
+  background: rgba(255, 185, 90, 0.14);
+  color: #ffe0b5;
+  border-color: rgba(255, 185, 90, 0.34);
+}
+
+.sidebar-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
