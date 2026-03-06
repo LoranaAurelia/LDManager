@@ -3466,18 +3466,69 @@
       openSvc(id);
     }
   }
+  function bindAuthOnly() {
+    const initBtn = $("initSubmit");
+    const loginBtn = $("loginSubmit");
+    const initPwd = $("initPassword");
+    const loginPwd = $("loginPassword");
+    if (initBtn && initPwd) {
+      initBtn.onclick = async () => {
+        try {
+          await j("auth/init", {
+            method: "POST",
+            body: JSON.stringify({ password: initPwd.value }),
+          });
+          await j("auth/login", {
+            method: "POST",
+            body: JSON.stringify({ password: initPwd.value }),
+          });
+          await enter();
+        } catch (e) {
+          toast(e.message || String(e), "error");
+        }
+      };
+      initPwd.onkeydown = (e) => {
+        if (e.key === "Enter") initBtn.click();
+      };
+    }
+    if (loginBtn && loginPwd) {
+      loginBtn.onclick = async () => {
+        try {
+          await j("auth/login", {
+            method: "POST",
+            body: JSON.stringify({ password: loginPwd.value }),
+          });
+          await enter();
+        } catch (e) {
+          toast(e.message || String(e), "error");
+        }
+      };
+      loginPwd.onkeydown = (e) => {
+        if (e.key === "Enter") loginBtn.click();
+      };
+    }
+  }
   async function boot() {
     c();
     // 启动兜底：先展示登录卡片，避免任何初始化异常导致整页空白。
     show(E.authLogin);
+    bindAuthOnly();
     initSettingsCenter();
     if (window.textReady && typeof window.textReady.then === "function") {
       try {
         await window.textReady;
       } catch (_) {}
     }
-    labels();
-    bind();
+    try {
+      labels();
+      bind();
+    } catch (e) {
+      bindAuthOnly();
+      toast(
+        `${tx("toast.init_failed", "初始化失败")}: ${e.message || String(e)}`,
+        "error",
+      );
+    }
     try {
       const b = await j("bootstrap/status");
       if (E.shellVersion && b) {
