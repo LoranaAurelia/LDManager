@@ -15,6 +15,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -521,13 +522,28 @@ func (s *Server) handleUpdateApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := applyBinaryUpdate(r.Context(), exePath, downloadURL); err != nil {
-		writeJSON(w, http.StatusBadGateway, jsonMessage{Message: err.Error()})
+		if scriptErr := runInstallerUpdateFallback(r.Context()); scriptErr != nil {
+			writeJSON(w, http.StatusBadGateway, jsonMessage{
+				Message: fmt.Sprintf("direct update failed: %v; script fallback failed: %v", err, scriptErr),
+			})
+			return
+		}
+		log.Printf("update: direct update failed, fallback script executed: %v", err)
+		writeJSON(w, http.StatusOK, map[string]any{
+			"updated":          true,
+			"method":           "script",
+			"remote_version":   result.RemoteVersion,
+			"restart_required": true,
+			"message":          "fallback installer update executed",
+		})
 		return
 	}
 	log.Printf("update: applied new binary from %s version=%s", downloadURL, result.RemoteVersion)
+	scheduleSelfRestart()
 	writeJSON(w, http.StatusOK, map[string]any{
 		"updated":          true,
-		"message":          "update applied, restart panel service to take effect",
+		"method":           "direct",
+		"message":          "update applied, panel will restart shortly",
 		"remote_version":   result.RemoteVersion,
 		"restart_required": true,
 	})
@@ -2764,6 +2780,42 @@ func applyBinaryUpdate(ctx context.Context, exePath string, downloadURL string) 
 }
 
 // requireAuth 校验会话，未登录时返回 401。
+
+func scheduleSelfRestart() {
+	go func() {
+		time.Sleep(900 * time.Millisecond)
+		cmd := exec.Command("bash", "-lc", "systemctl restart ldmanager")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			log.Printf("update: systemctl restart failed: %v output=%s", err, strings.TrimSpace(string(out)))
+		}
+	}()
+}
+
+func runInstallerUpdateFallback(ctx context.Context) error {
+	candidates := []string{
+		"install-ldm.sh",
+		"./install-ldm.sh",
+		"/LDManager/install-ldm.sh",
+		"/SealPanel/install-ldm.sh",
+		"/usr/local/bin/install-ldm.sh",
+	}
+	for _, p := range candidates {
+		path := strings.TrimSpace(p)
+		if path == "" {
+			continue
+		}
+		if _, err := os.Stat(path); err != nil {
+			continue
+		}
+		cmd := exec.CommandContext(ctx, "bash", path, "--update", "--yes")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("%s failed: %v output=%s", path, err, strings.TrimSpace(string(out)))
+		}
+		return nil
+	}
+	return errors.New("installer script not found")
+}
+
 func (s *Server) requireAuth(w http.ResponseWriter, r *http.Request) bool {
 	if !s.passwordStore.Exists() {
 		writeJSON(w, http.StatusPreconditionFailed, jsonMessage{Message: "password is not initialized"})

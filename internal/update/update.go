@@ -26,6 +26,7 @@ type ManifestSource struct {
 	AssetNameContains string `json:"asset_name_contains"`
 	TimeoutSeconds    int    `json:"timeout_seconds"`
 	SupportsService   bool   `json:"supports_service_manifests"`
+	SupportsRemotePkg bool   `json:"supports_remote_packages"`
 }
 
 type DownloadSource struct {

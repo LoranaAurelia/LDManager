@@ -176,7 +176,7 @@ func (c SourcesConfig) defaultServiceManifestSource() (*ManifestSource, error) {
 		if normalizeSourceType(item.Type) != "manifest" {
 			continue
 		}
-		if !item.SupportsService {
+		if !item.SupportsService && !item.SupportsRemotePkg {
 			continue
 		}
 		if strings.TrimSpace(item.URL) == "" {

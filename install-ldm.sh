@@ -620,4 +620,10 @@ main() {
   done
 }
 
+if [ "${1:-}" = "--update" ]; then
+  shift || true
+  update_flow
+  exit 0
+fi
+
 main "$@"
