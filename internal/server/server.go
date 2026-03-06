@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"embed"
 	"encoding/json"
@@ -327,9 +328,22 @@ func (s *Server) wrapServiceEntry(staticHandler http.Handler, indexHTML []byte) 
 
 // serveAppIndex 输出前端入口 HTML。
 func (s *Server) serveAppIndex(w http.ResponseWriter, indexHTML []byte) {
+	output := indexHTML
+	if s.cfg.BasePath != "/" {
+		baseHref := s.cfg.BasePath
+		if !strings.HasSuffix(baseHref, "/") {
+			baseHref += "/"
+		}
+		output = bytes.Replace(
+			indexHTML,
+			[]byte(`<base href="/">`),
+			[]byte(`<base href="`+baseHref+`">`),
+			1,
+		)
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(indexHTML)
+	_, _ = w.Write(output)
 }
 
 // isKnownServiceTab 判断 URL 片段是否属于服务子页面标签。
