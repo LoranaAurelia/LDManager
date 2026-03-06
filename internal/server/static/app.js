@@ -353,7 +353,9 @@
     return !v || v === k ? fb : v;
   };
   function c() {
-    IDS.forEach((id) => (E[id] = $(id)));
+    IDS.forEach((id) => {
+      E[id] = $(id) || document.createElement("div");
+    });
     [
       "dashSystemCpu",
       "dashSystemLoad",
@@ -3466,6 +3468,8 @@
   }
   async function boot() {
     c();
+    // 启动兜底：先展示登录卡片，避免任何初始化异常导致整页空白。
+    show(E.authLogin);
     initSettingsCenter();
     if (window.textReady && typeof window.textReady.then === "function") {
       try {
