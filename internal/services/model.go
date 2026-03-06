@@ -12,9 +12,9 @@ const (
 
 // Service 描述一个被面板托管的服务实例及其运行状态。
 type Service struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	DisplayName string `json:"display_name"`
+	ID           string            `json:"id"`
+	Name         string            `json:"name"`
+	DisplayName  string            `json:"display_name"`
 	Type         string            `json:"type"`
 	WorkDir      string            `json:"work_dir"`
 	InstallDir   string            `json:"install_dir"`
@@ -48,20 +48,20 @@ type RestartPolicy struct {
 
 // CreateServiceRequest 定义创建服务时需要的请求参数。
 type CreateServiceRequest struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	DisplayName string `json:"display_name"`
-	Type       string            `json:"type"`
-	WorkDir    string            `json:"work_dir"`
-	InstallDir string            `json:"install_dir"`
-	ExecPath   string            `json:"exec_path"`
-	Args       []string          `json:"args"`
-	Env        map[string]string `json:"env"`
-	Port       int               `json:"port"`
-	AutoStart  bool              `json:"auto_start"`
-	Restart    RestartPolicy     `json:"restart"`
-	LogPolicy  LogPolicy         `json:"log_policy"`
-	DeployMeta DeployMeta        `json:"deploy_meta"`
+	ID          string            `json:"id"`
+	Name        string            `json:"name"`
+	DisplayName string            `json:"display_name"`
+	Type        string            `json:"type"`
+	WorkDir     string            `json:"work_dir"`
+	InstallDir  string            `json:"install_dir"`
+	ExecPath    string            `json:"exec_path"`
+	Args        []string          `json:"args"`
+	Env         map[string]string `json:"env"`
+	Port        int               `json:"port"`
+	AutoStart   bool              `json:"auto_start"`
+	Restart     RestartPolicy     `json:"restart"`
+	LogPolicy   LogPolicy         `json:"log_policy"`
+	DeployMeta  DeployMeta        `json:"deploy_meta"`
 }
 
 // LogPolicy 定义单服务日志归档策略。
