@@ -16,8 +16,8 @@ permissions:
   contents: read
 
 jobs:
-  build-linux-script:
-    name: Build via build-release.sh (Linux)
+  build-linux:
+    name: Build (Linux, Inline Pipeline)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -37,19 +37,84 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
-      - name: Build
+      - name: Build (inline)
         shell: bash
         env:
           VERSION: ${{ github.event.inputs.version }}
           CHANNEL: ${{ github.event.inputs.channel }}
+          LDM_MANIFEST_URL: https://manifest.xuetao.host/LDM/latest.json
+          LDM_BIN_URL_AMD64: https://sdsh.xuetao.host/ldm-linux-amd64
+          LDM_BIN_URL_ARM64: https://sdsh.xuetao.host/ldm-linux-arm64
         run: |
-          chmod +x ./build-release.sh
-          ./build-release.sh --skip-tests
+          set -euo pipefail
+
+          project_root="$PWD"
+          out_dir="$project_root/dist"
+          out_path_amd64="$out_dir/ldm-linux-amd64"
+          out_path_arm64="$out_dir/ldm-linux-arm64"
+          install_out="$out_dir/install-ldm.sh"
+
+          mkdir -p "$out_dir"
+
+          export GOCACHE="/tmp/ldm-gocache"
+          export GOMODCACHE="/tmp/ldm-gomodcache"
+          mkdir -p "$GOCACHE" "$GOMODCACHE"
+
+          export HTTP_PROXY=""
+          export HTTPS_PROXY=""
+          export ALL_PROXY=""
+          export http_proxy=""
+          export https_proxy=""
+          export all_proxy=""
+
+          base_version="$(tr -d ' \t\r\n' < "$project_root/VERSION" 2>/dev/null || true)"
+          if [[ -z "$base_version" ]]; then base_version="0.1.0"; fi
+          base_channel="$(tr -d ' \t\r\n' < "$project_root/CHANNEL" 2>/dev/null || true)"
+          if [[ -z "$base_channel" ]]; then base_channel="Dev"; fi
+
+          input_version="${VERSION:-$base_version}"
+          input_channel="${CHANNEL:-$base_channel}"
+          short_sha="${SHORT_SHA:-${GITHUB_SHA:0:7}}"
+          build_time="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          full_version="${input_version}-${input_channel}+sha.${short_sha}"
+
+          ldflags="-s -w \
+            -X web-sealdice/internal/version.Version=${full_version} \
+            -X web-sealdice/internal/version.Commit=${short_sha} \
+            -X web-sealdice/internal/version.BuildTime=${build_time} \
+            -X web-sealdice/internal/version.Channel=${input_channel} \
+            -X web-sealdice/internal/version.Dirty=false"
+
+          echo "[1/5] Downloading Go modules..."
+          go mod download
+
+          echo "[2/5] Syncing latest frontend assets..."
+          npm run prepare:assets
+
+          echo "[3/5] Running tests..."
+          go test ./...
+
+          echo "[4/5] Building Linux binaries (amd64 + arm64)..."
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "$ldflags" -o "$out_path_amd64" ./cmd/sealpanel
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "$ldflags" -o "$out_path_arm64" ./cmd/sealpanel
+
+          echo "[5/5] Rendering installer script..."
+          sed \
+            -e "s|__MANIFEST_URL__|${LDM_MANIFEST_URL}|g" \
+            -e "s|__BIN_URL_AMD64__|${LDM_BIN_URL_AMD64}|g" \
+            -e "s|__BIN_URL_ARM64__|${LDM_BIN_URL_ARM64}|g" \
+            "$project_root/install-ldm.sh" > "$install_out"
+          chmod +x "$install_out"
+
+          echo "Built: $out_path_amd64"
+          echo "Built: $out_path_arm64"
+          echo "Built: $install_out"
+          echo "Version: $full_version"
 
       - name: Upload artifacts (Linux job)
         uses: actions/upload-artifact@v4
         with:
-          name: build-linux-script
+          name: build-linux
           path: |
             dist/ldm-linux-amd64
             dist/ldm-linux-arm64
