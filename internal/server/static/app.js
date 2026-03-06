@@ -484,7 +484,7 @@
     return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
   };
   const tx = (k, f = "") =>
-    typeof window.text === "function" ? window.text(k, f) : f;
+    typeof window.text === "function" ? window.text(k, f || k) : f || k;
   window.tx = tx;
   const portValidation =
     window.SealPortValidation && window.SealPortValidation.createPortValidation
