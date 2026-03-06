@@ -13,6 +13,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -192,6 +193,7 @@ func (s *Server) buildHandler() (http.Handler, error) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/bootstrap/status", s.handleBootstrapStatus)
 	mux.HandleFunc("/api/update/check", s.handleUpdateCheck)
+	mux.HandleFunc("/api/update/apply", s.handleUpdateApply)
 	mux.HandleFunc("/api/panel/settings", s.handlePanelSettings)
 	mux.HandleFunc("/api/panel/logs/clear", s.handlePanelLogsClear)
 	mux.HandleFunc("/api/auth/init", s.handleInitPassword)
@@ -464,6 +466,65 @@ func (s *Server) handleUpdateCheck(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleInitPassword 首次初始化密码。
+
+// handleUpdateApply 在 APT 系 Linux 上执行面板自更新并重启服务。
+func (s *Server) handleUpdateApply(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAuth(w, r) {
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "method not allowed"})
+		return
+	}
+	if runtime.GOOS != "linux" {
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "update apply only supports linux"})
+		return
+	}
+	if _, err := exec.LookPath("apt-get"); err != nil {
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "only apt-based linux is supported"})
+		return
+	}
+
+	type applyReq struct {
+		DownloadURL string `json:"download_url"`
+	}
+	var req applyReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "invalid request body"})
+		return
+	}
+	url := strings.TrimSpace(req.DownloadURL)
+	if url == "" {
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "download_url is required"})
+		return
+	}
+
+	tmp, err := os.CreateTemp("", "ldmanager-update-*")
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, jsonMessage{Message: "failed to create temp file"})
+		return
+	}
+	tmpPath := tmp.Name()
+	_ = tmp.Close()
+	defer os.Remove(tmpPath)
+
+	cmd := exec.Command("bash", "-lc", fmt.Sprintf("set -euo pipefail; apt-get update -y >/dev/null; apt-get install -y curl >/dev/null; curl -fL --retry 3 --connect-timeout 20 -o %q %q; install -m 0755 %q /LDManager/ldmanager; systemctl daemon-reload; systemctl restart ldmanager", tmpPath, url, tmpPath))
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		msg := strings.TrimSpace(string(out))
+		if msg == "" {
+			msg = err.Error()
+		}
+		writeJSON(w, http.StatusBadGateway, jsonMessage{Message: msg})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"message":       "update applied",
+		"local_version": buildver.Version,
+	})
+}
+
 func (s *Server) handleInitPassword(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "method not allowed"})

@@ -206,7 +206,7 @@
     "panelLogMaxMB",
     "panelUpdateTitle",
     "panelUpdateCheckBtn",
-    "panelUpdateDownloadLink",
+    "panelUpdateApplyBtn",
     "panelUpdateStatus",
     "panelLogsClearBtn",
     "panelMetricsRefreshLabel",
@@ -891,10 +891,10 @@
         "panel.update.check",
         "检查更新",
       );
-    if (E.panelUpdateDownloadLink)
-      E.panelUpdateDownloadLink.textContent = TXT_SAFE(
-        "panel.update.download",
-        "打开下载地址",
+    if (E.panelUpdateApplyBtn)
+      E.panelUpdateApplyBtn.textContent = TXT_SAFE(
+        "panel.update.apply",
+        "立即更新",
       );
     if (E.panelUpdateStatus)
       E.panelUpdateStatus.textContent = TXT_SAFE(
@@ -2080,9 +2080,9 @@
           "panel.update.idle",
           "点击“检查更新”获取最新版本信息。",
         );
-      if (E.panelUpdateDownloadLink) {
-        E.panelUpdateDownloadLink.classList.add("hidden");
-        E.panelUpdateDownloadLink.removeAttribute("href");
+      if (E.panelUpdateApplyBtn) {
+        E.panelUpdateApplyBtn.classList.add("hidden");
+        E.panelUpdateApplyBtn.disabled = false;
       }
       S.disableHTTPSWarning = !!c.disable_https_warning;
       updateHTTPSNotice();
@@ -2109,15 +2109,13 @@
       `${TXT_SAFE("panel.update.local", "本地版本")}: ${local}\n` +
       `${TXT_SAFE("panel.update.remote", "远端版本")}: ${remote}\n` +
       `${TXT_SAFE("panel.update.source", "检测来源")}: ${source}`;
-    if (E.panelUpdateDownloadLink) {
-      const url = String(d.download_url || "").trim();
-      if (url) {
-        E.panelUpdateDownloadLink.href = url;
-        E.panelUpdateDownloadLink.classList.remove("hidden");
+    if (E.panelUpdateApplyBtn) {
+      if (hasUpdate) {
+        E.panelUpdateApplyBtn.classList.remove("hidden");
       } else {
-        E.panelUpdateDownloadLink.classList.add("hidden");
-        E.panelUpdateDownloadLink.removeAttribute("href");
+        E.panelUpdateApplyBtn.classList.add("hidden");
       }
+      E.panelUpdateApplyBtn.disabled = false;
     }
   }
 
@@ -2146,6 +2144,44 @@
       toast(e.message || TXT_SAFE("panel.update.failed", "更新检查失败"), "error");
     } finally {
       E.panelUpdateCheckBtn.disabled = false;
+    }
+  }
+
+  async function panelApplyUpdate() {
+    if (!E.panelUpdateApplyBtn) return;
+    const url = String((S.update.result && S.update.result.download_url) || "").trim();
+    if (!url) {
+      toast(TXT_SAFE("panel.update.no_package", "未找到可用更新包"), "error");
+      return;
+    }
+    try {
+      E.panelUpdateApplyBtn.disabled = true;
+      if (E.panelUpdateStatus)
+        E.panelUpdateStatus.textContent = TXT_SAFE(
+          "panel.update.applying",
+          "正在更新面板...",
+        );
+      const d = await j("update/apply", {
+        method: "POST",
+        body: JSON.stringify({ download_url: url }),
+      });
+      if (E.panelUpdateStatus)
+        E.panelUpdateStatus.textContent =
+          TXT_SAFE("panel.update.apply_done", "更新完成，服务重启中...") +
+          `
+${TXT_SAFE("panel.update.local", "本地版本")}: ${String(d.local_version || "-")}`;
+      toast(TXT_SAFE("panel.update.apply_done", "更新完成，服务重启中..."), "ok");
+      S.update.hasUpdate = false;
+      if (E.shellVersion) E.shellVersion.classList.remove("has-update");
+      E.panelUpdateApplyBtn.classList.add("hidden");
+      setTimeout(() => {
+        window.location.reload();
+      }, 3500);
+    } catch (e) {
+      if (E.panelUpdateStatus)
+        E.panelUpdateStatus.textContent = e.message || TXT_SAFE("panel.update.apply_failed", "更新失败");
+      toast(e.message || TXT_SAFE("panel.update.apply_failed", "更新失败"), "error");
+      E.panelUpdateApplyBtn.disabled = false;
     }
   }
 
@@ -3350,6 +3386,7 @@
     E.panelConfigSaveBtn.onclick = panelSaveForm;
     E.panelRawSaveBtn.onclick = panelSaveRaw;
     if (E.panelUpdateCheckBtn) E.panelUpdateCheckBtn.onclick = panelCheckUpdate;
+    if (E.panelUpdateApplyBtn) E.panelUpdateApplyBtn.onclick = panelApplyUpdate;
     if (E.shellVersion) {
       E.shellVersion.onclick = () => {
         if (S.update.hasUpdate) {
