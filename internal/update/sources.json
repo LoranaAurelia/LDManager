@@ -7,7 +7,8 @@
       "name": "Manifest Cource",
       "type": "manifest",
       "url": "https://manifest.xuetao.host/LDM/latest.json",
-      "timeout_seconds": 8
+      "timeout_seconds": 8,
+      "supports_service_manifests": true
     },
     {
       "id": "github-release",

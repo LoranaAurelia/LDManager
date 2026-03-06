@@ -125,6 +125,66 @@ func (d *LLBotDeployer) DeployFromAuto(registryName string, version string, logf
 	return execPath, nil
 }
 
+// DeployFromURL 从指定 URL 下载 LLBot 压缩包并部署。
+func (d *LLBotDeployer) DeployFromURL(registryName string, rawURL string, logf func(string, ...any)) (string, error) {
+	targetDir := d.TargetDir(registryName)
+	if _, err := os.Stat(targetDir); err == nil {
+		return "", fmt.Errorf("target directory already exists: %s", targetDir)
+	}
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		return "", err
+	}
+	cleanupOnFail := true
+	defer func() {
+		if cleanupOnFail {
+			_ = os.RemoveAll(targetDir)
+		}
+	}()
+
+	url := strings.TrimSpace(rawURL)
+	if url == "" {
+		return "", errors.New("download url is required")
+	}
+	if logf != nil {
+		logf("deploy: target dir %s", targetDir)
+		logf("deploy: downloading %s", url)
+	}
+
+	client := &http.Client{Timeout: 10 * time.Minute}
+	resp, err := client.Get(url)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("download failed: %s", resp.Status)
+	}
+
+	if logf != nil {
+		logf("deploy: extracting package")
+	}
+	if err := extractZipFromReader(resp.Body, targetDir); err != nil {
+		return "", err
+	}
+	if err := fixLLBotPermissions(targetDir, logf); err != nil {
+		return "", err
+	}
+	execPath, err := findLLBotExecutable(targetDir)
+	if err != nil {
+		return "", err
+	}
+	if runtime.GOOS == "linux" {
+		wrapper, err := writeLLBotHeadlessScript(targetDir, execPath)
+		if err != nil {
+			return "", err
+		}
+		cleanupOnFail = false
+		return wrapper, nil
+	}
+	cleanupOnFail = false
+	return execPath, nil
+}
+
 // DeployFromReader 从上传流读取 LLBot 压缩包并完成部署。
 func (d *LLBotDeployer) DeployFromReader(registryName string, reader io.Reader, logf func(string, ...any)) (string, error) {
 	targetDir := d.TargetDir(registryName)

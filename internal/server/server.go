@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"errors"
@@ -64,6 +65,7 @@ type deployLogger struct {
 type sealdiceDeployMeta struct {
 	Source string `json:"source"`
 	URL    string `json:"url"`
+	Auto   bool   `json:"auto"`
 	Port   int    `json:"port"`
 }
 
@@ -73,6 +75,7 @@ type lagrangeDeployMeta struct {
 	Version         string `json:"version"`
 	SignServerURL   string `json:"sign_server_url"`
 	DownloadPrefix  string `json:"download_prefix"`
+	DownloadURL     string `json:"download_url"`
 	EnableForwardWS bool   `json:"enable_forward_ws"`
 	ForwardWSPort   int    `json:"forward_ws_port"`
 	EnableReverseWS bool   `json:"enable_reverse_ws"`
@@ -192,6 +195,7 @@ func (s *Server) buildHandler() (http.Handler, error) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/bootstrap/status", s.handleBootstrapStatus)
 	mux.HandleFunc("/api/update/check", s.handleUpdateCheck)
+	mux.HandleFunc("/api/update/apply", s.handleUpdateApply)
 	mux.HandleFunc("/api/panel/settings", s.handlePanelSettings)
 	mux.HandleFunc("/api/panel/logs/clear", s.handlePanelLogsClear)
 	mux.HandleFunc("/api/auth/init", s.handleInitPassword)
@@ -206,6 +210,7 @@ func (s *Server) buildHandler() (http.Handler, error) {
 	mux.HandleFunc("/api/deploy/sealdice/upload", s.handleDeploySealdiceUpload)
 	mux.HandleFunc("/api/deploy/lagrange/auto", s.handleDeployLagrangeAuto)
 	mux.HandleFunc("/api/deploy/lagrange/upload", s.handleDeployLagrangeUpload)
+	mux.HandleFunc("/api/deploy/lagrange/versions", s.handleLagrangeVersions)
 	mux.HandleFunc("/api/deploy/llbot/auto", s.handleDeployLLBotAuto)
 	mux.HandleFunc("/api/deploy/llbot/upload", s.handleDeployLLBotUpload)
 	mux.HandleFunc("/api/deploy/logs/", s.handleDeployLogs)
@@ -463,6 +468,57 @@ func (s *Server) handleUpdateCheck(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+// handleUpdateApply 下载新版可执行并替换当前二进制文件（Linux）。
+// 说明：替换完成后当前进程不会自动退出，需由用户手动重启服务以加载新版本。
+func (s *Server) handleUpdateApply(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAuth(w, r) {
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "method not allowed"})
+		return
+	}
+	if runtime.GOOS != "linux" {
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "direct update is only supported on linux"})
+		return
+	}
+
+	result, err := update.Check(r.Context(), buildver.Version, runtime.GOARCH)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, jsonMessage{Message: err.Error()})
+		return
+	}
+	if !result.HasUpdate {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"updated": false,
+			"message": "already up to date",
+		})
+		return
+	}
+	downloadURL := strings.TrimSpace(result.DownloadURL)
+	if downloadURL == "" {
+		writeJSON(w, http.StatusBadGateway, jsonMessage{Message: "update download url is empty"})
+		return
+	}
+
+	exePath, err := os.Executable()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, jsonMessage{Message: err.Error()})
+		return
+	}
+	if err := applyBinaryUpdate(r.Context(), exePath, downloadURL); err != nil {
+		writeJSON(w, http.StatusBadGateway, jsonMessage{Message: err.Error()})
+		return
+	}
+	log.Printf("update: applied new binary from %s version=%s", downloadURL, result.RemoteVersion)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"updated":          true,
+		"message":          "update applied, restart panel service to take effect",
+		"remote_version":   result.RemoteVersion,
+		"restart_required": true,
+	})
+}
+
 // handleInitPassword 首次初始化密码。
 func (s *Server) handleInitPassword(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -598,6 +654,7 @@ func (s *Server) handleDeploySealdiceAuto(w http.ResponseWriter, r *http.Request
 
 	// reqBody 鐎规矮绠熺拠銉δ侀崸妞惧▏閻劎娈戦弫鐗堝祦缂佹挻鐎妴?
 	type reqBody struct {
+		Source       string `json:"source"`
 		URL          string `json:"url"`
 		RegistryName string `json:"registry_name"`
 		DisplayName  string `json:"display_name"`
@@ -615,9 +672,31 @@ func (s *Server) handleDeploySealdiceAuto(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	source := strings.ToLower(strings.TrimSpace(body.Source))
+	if source == "" {
+		source = "auto"
+	}
+	if source != "auto" && source != "url" {
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "invalid source"})
+		return
+	}
+	resolvedURL := strings.TrimSpace(body.URL)
+	if source == "auto" {
+		release, err := update.FetchSealdiceLatest(r.Context(), runtime.GOARCH)
+		if err != nil {
+			writeJSON(w, http.StatusBadGateway, jsonMessage{Message: err.Error()})
+			return
+		}
+		resolvedURL = release.DownloadURL
+	}
+	if strings.TrimSpace(resolvedURL) == "" {
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "download url is empty"})
+		return
+	}
+
 	deployLog := s.newDeployLogger("Sealdice", body.RegistryName)
 	defer deployLog.Close()
-	deployLog.Printf("deploy: sealdice auto request registry=%s port=%d auto_start=%t url=%s", body.RegistryName, body.Port, body.AutoStart, body.URL)
+	deployLog.Printf("deploy: sealdice auto request registry=%s port=%d auto_start=%t source=%s url=%s", body.RegistryName, body.Port, body.AutoStart, source, resolvedURL)
 
 	restartPolicy := toRestartPolicy(
 		body.Restart.Enabled,
@@ -630,10 +709,10 @@ func (s *Server) handleDeploySealdiceAuto(w http.ResponseWriter, r *http.Request
 		body.Port,
 		body.AutoStart,
 		restartPolicy,
-		"auto",
-		body.URL,
+		source,
+		resolvedURL,
 		func(name string) (string, error) {
-			return s.sealdiceDeployer.DeployFromURL(name, body.URL, deployLog.Printf)
+			return s.sealdiceDeployer.DeployFromURL(name, resolvedURL, deployLog.Printf)
 		},
 	)
 	if err != nil {
@@ -744,12 +823,14 @@ func (s *Server) handleDeployLagrangeAuto(w http.ResponseWriter, r *http.Request
 
 	// reqBody 鐎规矮绠熺拠銉δ侀崸妞惧▏閻劎娈戦弫鐗堝祦缂佹挻鐎妴?
 	type reqBody struct {
+		Source          string `json:"source"`
 		RegistryName    string `json:"registry_name"`
 		DisplayName     string `json:"display_name"`
 		Port            int    `json:"port"`
 		AutoStart       bool   `json:"auto_start"`
 		Version         string `json:"version"`
 		DownloadPrefix  string `json:"download_prefix"`
+		DownloadURL     string `json:"download_url"`
 		SignServer      string `json:"sign_server_url"`
 		EnableForwardWS bool   `json:"enable_forward_ws"`
 		ForwardWSPort   int    `json:"forward_ws_port"`
@@ -785,15 +866,42 @@ func (s *Server) handleDeployLagrangeAuto(w http.ResponseWriter, r *http.Request
 		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "forward ws must be enabled"})
 		return
 	}
+	source := strings.ToLower(strings.TrimSpace(body.Source))
+	if source == "" {
+		source = "auto"
+	}
+	if source != "auto" && source != "url" {
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "invalid source"})
+		return
+	}
+
+	resolvedURL := strings.TrimSpace(body.DownloadURL)
+	resolvedVersion := strings.TrimSpace(body.Version)
+	if source == "auto" {
+		pick, err := update.ResolveLagrangeDownloadURL(r.Context(), runtime.GOARCH, resolvedVersion)
+		if err != nil {
+			writeJSON(w, http.StatusBadGateway, jsonMessage{Message: err.Error()})
+			return
+		}
+		resolvedURL = pick.DownloadURL
+		if strings.TrimSpace(resolvedVersion) == "" {
+			resolvedVersion = pick.Key
+		}
+	}
+	if strings.TrimSpace(resolvedURL) == "" {
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "download url is empty"})
+		return
+	}
 
 	deployLog := s.newDeployLogger("Lagrange", body.RegistryName)
 	defer deployLog.Close()
-	deployLog.Printf("deploy: lagrange request registry=%s auto_start=%t version=%s", body.RegistryName, body.AutoStart, body.Version)
+	deployLog.Printf("deploy: lagrange request registry=%s auto_start=%t source=%s version=%s url=%s", body.RegistryName, body.AutoStart, source, resolvedVersion, resolvedURL)
 
 	opts := deploy.LagrangeDeployOptions{
-		Version:         body.Version,
+		Version:         resolvedVersion,
 		SignServerURL:   body.SignServer,
 		DownloadPrefix:  body.DownloadPrefix,
+		DownloadURL:     resolvedURL,
 		EnableForwardWS: body.EnableForwardWS,
 		ForwardWSPort:   body.ForwardWSPort,
 		ForwardWSHost:   "127.0.0.1",
@@ -817,6 +925,7 @@ func (s *Server) handleDeployLagrangeAuto(w http.ResponseWriter, r *http.Request
 		body.AutoStart,
 		restartPolicy,
 		opts,
+		source,
 		deployLog.Printf,
 	)
 	if err != nil {
@@ -954,6 +1063,8 @@ func (s *Server) handleDeployLLBotAuto(w http.ResponseWriter, r *http.Request) {
 
 	// reqBody 鐎规矮绠熺拠銉δ侀崸妞惧▏閻劎娈戦弫鐗堝祦缂佹挻鐎妴?
 	type reqBody struct {
+		Source       string `json:"source"`
+		URL          string `json:"url"`
 		RegistryName string `json:"registry_name"`
 		DisplayName  string `json:"display_name"`
 		Port         int    `json:"port"`
@@ -973,6 +1084,14 @@ func (s *Server) handleDeployLLBotAuto(w http.ResponseWriter, r *http.Request) {
 	if body.Port == 0 {
 		body.Port = 3212
 	}
+	source := strings.ToLower(strings.TrimSpace(body.Source))
+	if source == "" {
+		source = "auto"
+	}
+	if source != "auto" && source != "url" {
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "invalid source"})
+		return
+	}
 	if runtime.GOOS == "linux" && !bootstrap.HasLinuxQQ() {
 		writeJSON(w, http.StatusConflict, jsonMessage{Message: "QQ is not installed, install QQ first"})
 		return
@@ -980,22 +1099,46 @@ func (s *Server) handleDeployLLBotAuto(w http.ResponseWriter, r *http.Request) {
 
 	deployLog := s.newDeployLogger("LuckyLilliaBot", body.RegistryName)
 	defer deployLog.Close()
-	deployLog.Printf("deploy: llbot request registry=%s port=%d auto_start=%t version=%s", body.RegistryName, body.Port, body.AutoStart, body.Version)
+	deployLog.Printf("deploy: llbot request registry=%s port=%d auto_start=%t source=%s version=%s", body.RegistryName, body.Port, body.AutoStart, source, body.Version)
 
 	restartPolicy := toRestartPolicy(
 		body.Restart.Enabled,
 		body.Restart.DelaySeconds,
 		body.Restart.MaxCrashCount,
 	)
-	item, err := s.deployLLBot(
-		body.RegistryName,
-		body.DisplayName,
-		body.Port,
-		body.AutoStart,
-		restartPolicy,
-		body.Version,
-		deployLog.Printf,
-	)
+	var item services.Service
+	var err error
+	if source == "url" {
+		url := strings.TrimSpace(body.URL)
+		if url == "" {
+			writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "download url is required"})
+			return
+		}
+		item, err = s.deployLLBotWithInstaller(
+			body.RegistryName,
+			body.DisplayName,
+			body.Port,
+			body.AutoStart,
+			restartPolicy,
+			body.Version,
+			source,
+			deployLog.Printf,
+			func(name string) (string, error) {
+				return s.llbotDeployer.DeployFromURL(name, url, deployLog.Printf)
+			},
+		)
+	} else {
+		item, err = s.deployLLBot(
+			body.RegistryName,
+			body.DisplayName,
+			body.Port,
+			body.AutoStart,
+			restartPolicy,
+			body.Version,
+			source,
+			deployLog.Printf,
+		)
+	}
 	if err != nil {
 		log.Printf("deploy: llbot auto failed registry=%s err=%v", body.RegistryName, err)
 		deployLog.Printf("deploy: failed err=%v", err)
@@ -1249,6 +1392,36 @@ func (s *Server) handleLagrangeSignInfo(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]any{"items": body})
 }
 
+// handleLagrangeVersions 返回当前架构可用的 Lagrange 版本列表（来自 manifest 源）。
+func (s *Server) handleLagrangeVersions(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAuth(w, r) {
+		return
+	}
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "method not allowed"})
+		return
+	}
+	items, err := update.FetchLagrangeVersions(r.Context(), runtime.GOARCH)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, jsonMessage{Message: err.Error()})
+		return
+	}
+	stable := ""
+	for _, item := range items {
+		if !item.IsLatest {
+			stable = item.Key
+			break
+		}
+	}
+	if stable == "" && len(items) > 0 {
+		stable = items[0].Key
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"items":          items,
+		"default_stable": stable,
+	})
+}
+
 // deploySealdice 统一落地 Sealdice 部署并注册服务记录。
 func (s *Server) deploySealdice(
 	registryName string,
@@ -1274,6 +1447,10 @@ func (s *Server) deploySealdice(
 	if displayName == "" {
 		displayName = registryName
 	}
+	source = strings.ToLower(strings.TrimSpace(source))
+	if source == "" {
+		source = "auto"
+	}
 
 	execPath, err := installer(registryName)
 	if err != nil {
@@ -1284,6 +1461,7 @@ func (s *Server) deploySealdice(
 	meta := sealdiceDeployMeta{
 		Source: source,
 		URL:    strings.TrimSpace(url),
+		Auto:   strings.EqualFold(strings.TrimSpace(source), "auto"),
 		Port:   port,
 	}
 	rawMeta, _ := json.Marshal(meta)
@@ -1321,6 +1499,7 @@ func (s *Server) deployLagrange(
 	autoStart bool,
 	restart services.RestartPolicy,
 	opts deploy.LagrangeDeployOptions,
+	source string,
 	logf deployLogFunc,
 ) (services.Service, error) {
 	return s.deployLagrangeWithInstaller(
@@ -1329,7 +1508,7 @@ func (s *Server) deployLagrange(
 		autoStart,
 		restart,
 		opts,
-		"auto",
+		source,
 		logf,
 		func(name string) (string, error) {
 			return s.lagrangeDeployer.DeployFromAuto(name, opts, logf)
@@ -1396,6 +1575,7 @@ func (s *Server) deployLagrangeWithInstaller(
 		Version:         opts.Version,
 		SignServerURL:   opts.SignServerURL,
 		DownloadPrefix:  opts.DownloadPrefix,
+		DownloadURL:     strings.TrimSpace(opts.DownloadURL),
 		EnableForwardWS: opts.EnableForwardWS,
 		ForwardWSPort:   opts.ForwardWSPort,
 		EnableReverseWS: opts.EnableReverseWS,
@@ -1439,6 +1619,7 @@ func (s *Server) deployLLBot(
 	autoStart bool,
 	restart services.RestartPolicy,
 	version string,
+	source string,
 	logf deployLogFunc,
 ) (services.Service, error) {
 	return s.deployLLBotWithInstaller(
@@ -1448,7 +1629,7 @@ func (s *Server) deployLLBot(
 		autoStart,
 		restart,
 		version,
-		"auto",
+		source,
 		logf,
 		func(name string) (string, error) {
 			return s.llbotDeployer.DeployFromAuto(name, version, logf)
@@ -2176,7 +2357,15 @@ func (s *Server) rebuildService(id string, mode string) (map[string]any, error) 
 			}
 		} else {
 			var err error
-			execPath, err = s.sealdiceDeployer.DeployFromURL(item.ID, meta.URL, deployLog.Printf)
+			downloadURL := strings.TrimSpace(meta.URL)
+			if strings.EqualFold(source, "auto") {
+				release, resolveErr := update.FetchSealdiceLatest(context.Background(), runtime.GOARCH)
+				if resolveErr != nil {
+					return nil, resolveErr
+				}
+				downloadURL = strings.TrimSpace(release.DownloadURL)
+			}
+			execPath, err = s.sealdiceDeployer.DeployFromURL(item.ID, downloadURL, deployLog.Printf)
 			if err != nil {
 				return nil, err
 			}
@@ -2202,6 +2391,7 @@ func (s *Server) rebuildService(id string, mode string) (map[string]any, error) 
 			Version:         meta.Version,
 			SignServerURL:   meta.SignServerURL,
 			DownloadPrefix:  meta.DownloadPrefix,
+			DownloadURL:     meta.DownloadURL,
 			EnableForwardWS: meta.EnableForwardWS,
 			ForwardWSPort:   meta.ForwardWSPort,
 			ForwardWSHost:   "127.0.0.1",
@@ -2225,6 +2415,13 @@ func (s *Server) rebuildService(id string, mode string) (map[string]any, error) 
 			defer func() { _ = f.Close() }()
 			execPath, err = s.lagrangeDeployer.DeployFromReader(item.ID, opts, f, deployLog.Printf)
 		} else {
+			if strings.EqualFold(source, "auto") {
+				pick, resolveErr := update.ResolveLagrangeDownloadURL(context.Background(), runtime.GOARCH, meta.Version)
+				if resolveErr != nil {
+					return nil, resolveErr
+				}
+				opts.DownloadURL = pick.DownloadURL
+			}
 			execPath, err = s.lagrangeDeployer.DeployFromAuto(item.ID, opts, deployLog.Printf)
 		}
 		if err != nil {
@@ -2502,6 +2699,54 @@ func copyLocalFile(srcPath, dstPath string) error {
 	defer func() { _ = dst.Close() }()
 	_, err = io.Copy(dst, src)
 	return err
+}
+
+func applyBinaryUpdate(ctx context.Context, exePath string, downloadURL string) error {
+	client := &http.Client{Timeout: 10 * time.Minute}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("User-Agent", "LDM-Updater/1.0")
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("download update failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return fmt.Errorf("download update http status: %d", resp.StatusCode)
+	}
+
+	dir := filepath.Dir(exePath)
+	tmpFile, err := os.CreateTemp(dir, ".ldm-update-*")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmpFile.Name()
+	defer func() { _ = os.Remove(tmpPath) }()
+
+	if _, err := io.Copy(tmpFile, io.LimitReader(resp.Body, 512*1024*1024)); err != nil {
+		_ = tmpFile.Close()
+		return err
+	}
+	if err := tmpFile.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmpPath, 0o755); err != nil {
+		return err
+	}
+
+	backup := exePath + ".old"
+	_ = os.Remove(backup)
+	if err := os.Rename(exePath, backup); err != nil {
+		return fmt.Errorf("backup current binary failed: %w", err)
+	}
+	if err := os.Rename(tmpPath, exePath); err != nil {
+		_ = os.Rename(backup, exePath)
+		return fmt.Errorf("replace binary failed: %w", err)
+	}
+	_ = os.Remove(backup)
+	return nil
 }
 
 // requireAuth 校验会话，未登录时返回 401。

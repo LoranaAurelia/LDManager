@@ -31,6 +31,7 @@ type LagrangeDeployOptions struct {
 	Version         string
 	SignServerURL   string
 	DownloadPrefix  string
+	DownloadURL     string
 	EnableForwardWS bool
 	ForwardWSPort   int
 	ForwardWSHost   string
@@ -79,11 +80,14 @@ func (d *LagrangeDeployer) DeployFromAuto(registryName string, opts LagrangeDepl
 		logf("deploy: target dir %s", targetDir)
 	}
 
-	zipName, err := lagrangeArchiveName()
-	if err != nil {
-		return "", err
+	url := strings.TrimSpace(opts.DownloadURL)
+	if url == "" {
+		zipName, err := lagrangeArchiveName()
+		if err != nil {
+			return "", err
+		}
+		url = lagrangeDownloadURL(zipName, opts.Version, opts.DownloadPrefix)
 	}
-	url := lagrangeDownloadURL(zipName, opts.Version, opts.DownloadPrefix)
 	if logf != nil {
 		logf("deploy: downloading %s", url)
 	}

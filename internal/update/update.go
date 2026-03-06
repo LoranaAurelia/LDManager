@@ -25,6 +25,7 @@ type ManifestSource struct {
 	APIURL            string `json:"api_url"`
 	AssetNameContains string `json:"asset_name_contains"`
 	TimeoutSeconds    int    `json:"timeout_seconds"`
+	SupportsService   bool   `json:"supports_service_manifests"`
 }
 
 type DownloadSource struct {
