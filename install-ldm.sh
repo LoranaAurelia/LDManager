@@ -116,11 +116,62 @@ detect_arch() {
 }
 
 binary_url_for_arch() {
+  local arch="$1"
+  local manifest_url
+
+  manifest_url="$(manifest_binary_url_for_arch "$arch" || true)"
+  if [ -n "$manifest_url" ]; then
+    echo "$manifest_url"
+    return
+  fi
+
   case "$1" in
     amd64) echo "$BIN_URL_AMD64" ;;
     arm64) echo "$BIN_URL_ARM64" ;;
     *) fail "unsupported architecture: $1" ;;
   esac
+}
+
+manifest_binary_url_for_arch() {
+  local arch="$1"
+  local tmp
+  local one_line
+  local from_files
+  local from_top
+
+  [ -n "$MANIFEST_URL" ] || return 1
+  tmp="$(mktemp)"
+  if ! download_file "$MANIFEST_URL" "$tmp" 2>/dev/null; then
+    rm -f "$tmp"
+    return 1
+  fi
+
+  one_line="$(tr -d '\r\n' < "$tmp")"
+  rm -f "$tmp"
+
+  # Preferred shape:
+  # {
+  #   "latest": {
+  #     "files": {
+  #       "amd64": "...",
+  #       "arm64": "..."
+  #     }
+  #   }
+  # }
+  from_files="$(printf '%s' "$one_line" | sed -n "s/.*\"latest\"[[:space:]]*:[[:space:]]*{.*\"files\"[[:space:]]*:[[:space:]]*{[^}]*\"${arch}\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p")"
+  if [ -n "$from_files" ]; then
+    printf '%s' "$from_files"
+    return 0
+  fi
+
+  # Compatible fallback for flat manifest style.
+  from_top="$(printf '%s' "$one_line" | sed -n 's/.*"download_url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+  if [ -n "$from_top" ]; then
+    printf '%s' "$from_top"
+    return 0
+  fi
+
+  return 1
 }
 
 download_file() {
