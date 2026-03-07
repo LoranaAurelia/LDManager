@@ -122,12 +122,7 @@ func (p *loginProtector) bucketLocked(key string, now time.Time) *loginBucket {
 			p.cleanupBucketsLocked(now, true)
 		}
 		if len(p.buckets) >= p.maxBuckets {
-			if !p.evictOldestLocked(now) {
-				if blocked := p.blockedBucketLocked(now); blocked != nil {
-					blocked.lastSeen = now
-					return blocked
-				}
-			}
+			p.evictOldestLocked()
 		}
 		b = &loginBucket{}
 		p.buckets[key] = b
@@ -176,16 +171,13 @@ func (p *loginProtector) cleanupBucketsLocked(now time.Time, aggressive bool) {
 	}
 }
 
-func (p *loginProtector) evictOldestLocked(now time.Time) bool {
+func (p *loginProtector) evictOldestLocked() {
 	type pair struct {
 		key      string
 		lastSeen time.Time
 	}
 	items := make([]pair, 0, len(p.buckets))
 	for k, b := range p.buckets {
-		if b != nil && now.Before(b.blockedTill) {
-			continue
-		}
 		ls := time.Time{}
 		if b != nil {
 			ls = b.lastSeen
@@ -195,20 +187,9 @@ func (p *loginProtector) evictOldestLocked(now time.Time) bool {
 	sort.Slice(items, func(i, j int) bool {
 		return items[i].lastSeen.Before(items[j].lastSeen)
 	})
-	if len(items) == 0 {
-		return false
+	if len(items) > 0 {
+		delete(p.buckets, items[0].key)
 	}
-	delete(p.buckets, items[0].key)
-	return true
-}
-
-func (p *loginProtector) blockedBucketLocked(now time.Time) *loginBucket {
-	for _, b := range p.buckets {
-		if b != nil && now.Before(b.blockedTill) {
-			return b
-		}
-	}
-	return nil
 }
 
 // clientFingerprint 实现该函数对应的业务逻辑。
