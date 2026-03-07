@@ -424,6 +424,14 @@
       : "/api/" + p.replace(/^\/+/, "");
     return appPath(clean);
   }
+  function trMessage(raw) {
+    if (typeof raw !== "string") return raw;
+    const key = raw.trim();
+    if (!key) return raw;
+    const translated =
+      typeof window.text === "function" ? window.text(key, key) : key;
+    return translated && translated !== key ? translated : raw;
+  }
   async function j(p, o = {}) {
     const r = await fetch(ep(p), {
       credentials: "same-origin",
@@ -437,6 +445,9 @@
     });
     const t = r.headers.get("content-type") || "";
     const d = t.includes("application/json") ? await r.json() : await r.text();
+    if (d && typeof d === "object" && typeof d.message === "string") {
+      d.message = trMessage(d.message);
+    }
     if (!r.ok) {
       const e = new Error(
         typeof d === "string" ? d : (d && d.message) || "HTTP " + r.status,
