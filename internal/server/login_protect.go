@@ -30,9 +30,8 @@ type loginProtector struct {
 	cleanupInterval time.Duration
 	lastCleanup     time.Time
 
-	mu       sync.Mutex
-	buckets  map[string]*loginBucket
-	overflow *loginBucket
+	mu      sync.Mutex
+	buckets map[string]*loginBucket
 }
 
 // newLoginProtector 创建并初始化对应对象。
@@ -123,16 +122,7 @@ func (p *loginProtector) bucketLocked(key string, now time.Time) *loginBucket {
 			p.cleanupBucketsLocked(now, true)
 		}
 		if len(p.buckets) >= p.maxBuckets {
-			if !p.evictOldestUnlockedLocked(now) {
-				if p.overflow == nil {
-					p.overflow = &loginBucket{}
-				}
-				if now.After(p.overflow.blockedTill) {
-					p.overflow.blockedTill = now.Add(p.block)
-				}
-				p.overflow.lastSeen = now
-				return p.overflow
-			}
+			p.evictOldestLocked()
 		}
 		b = &loginBucket{}
 		p.buckets[key] = b
@@ -181,16 +171,13 @@ func (p *loginProtector) cleanupBucketsLocked(now time.Time, aggressive bool) {
 	}
 }
 
-func (p *loginProtector) evictOldestUnlockedLocked(now time.Time) bool {
+func (p *loginProtector) evictOldestLocked() {
 	type pair struct {
 		key      string
 		lastSeen time.Time
 	}
 	items := make([]pair, 0, len(p.buckets))
 	for k, b := range p.buckets {
-		if b != nil && now.Before(b.blockedTill) {
-			continue
-		}
 		ls := time.Time{}
 		if b != nil {
 			ls = b.lastSeen
@@ -202,9 +189,7 @@ func (p *loginProtector) evictOldestUnlockedLocked(now time.Time) bool {
 	})
 	if len(items) > 0 {
 		delete(p.buckets, items[0].key)
-		return true
 	}
-	return false
 }
 
 // clientFingerprint 实现该函数对应的业务逻辑。

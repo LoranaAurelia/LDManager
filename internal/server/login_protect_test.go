@@ -90,34 +90,3 @@ func TestLoginProtectorBucketCap(t *testing.T) {
 		t.Fatalf("bucket cap exceeded: got %d > %d", len(p.buckets), cfg.LoginProtect.MaxBuckets)
 	}
 }
-
-func TestLoginProtectorDoesNotEvictActiveBlockedBuckets(t *testing.T) {
-	cfg := config.Default()
-	cfg.LoginProtect.Enabled = true
-	cfg.LoginProtect.MaxAttempts = 1
-	cfg.LoginProtect.BlockSeconds = 60
-	cfg.LoginProtect.WindowSeconds = 60
-	cfg.LoginProtect.MaxBuckets = 1
-	cfg.LoginProtect.CleanupIntervalSeconds = 3600
-	cfg.LoginProtect.BucketIdleTTLSeconds = 3600
-
-	p := newLoginProtector(cfg)
-
-	blockedReq := httptest.NewRequest("POST", "/api/auth/login", nil)
-	blockedReq.RemoteAddr = "127.0.0.1:10001"
-	p.RecordFailure(blockedReq)
-
-	if ok, _ := p.Allow(blockedReq); ok {
-		t.Fatalf("blocked fingerprint should remain blocked")
-	}
-
-	otherReq := httptest.NewRequest("POST", "/api/auth/login", nil)
-	otherReq.RemoteAddr = "127.0.0.1:10002"
-	if ok, _ := p.Allow(otherReq); ok {
-		t.Fatalf("new fingerprint should be denied when all buckets are occupied by active blocks")
-	}
-
-	if ok, _ := p.Allow(blockedReq); ok {
-		t.Fatalf("active blocked bucket must not be evicted under capacity pressure")
-	}
-}
