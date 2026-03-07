@@ -1073,10 +1073,6 @@
       ["time", tx("file.table.mtime")],
       ["type", tx("file.table.type")],
     ]);
-    fill(E.createAutoStart, [
-      ["false", tx("create.autostart.no")],
-      ["true", tx("create.autostart.yes")],
-    ]);
     fill(E.createType, [
       ["Sealdice", tx("create.type.sealdice")],
       ["Lagrange", tx("create.type.lagrange")],
@@ -2610,7 +2606,7 @@
       .join("");
     const deployCard = createCard(
       TXT_SAFE("create.group.deploy", "部署 / 运行配置"),
-      `<div class="form-grid config-grid"><div><label>${tx("create.source.label")}</label><select id="lagSource"><option value="auto" selected>${tx("create.source.auto")}</option><option value="url">${tx("create.source.url")}</option><option value="upload">${tx("create.source.upload")}</option></select></div><div class="config-span-full"><label>${tx("create.lagrange.version.label")}</label><select id="lagVersion"></select></div><div id="lagUploadWrap" class="config-span-full"><label>${tx("create.lagrange.package")}</label><input id="lagPackage" type="file" accept=".zip"></div><div id="lagUrlWrap" class="config-span-full hidden"><label>${tx("create.url.label")}</label><input id="lagURL" type="text" placeholder="https://..."></div><div class="config-span-full"><div class="impl-grid"><div class="impl-card"><label class="checkbox-row checkbox-row-switch"><input id="lagEnableForward" class="force-on-switch" type="checkbox" checked disabled><span>${tx("create.lagrange.impl.forward.required")}</span></label><div id="lagForwardPortWrap" class="impl-port-wrap"><label>${tx("create.port.label")}</label><input id="lagPort" type="number" min="1" max="65535" value="3212"><div id="lagPortHint" class="port-hint"></div></div></div><div class="impl-card"><label class="checkbox-row checkbox-row-switch"><input id="lagEnableReverse" type="checkbox"><span>${tx("create.lagrange.impl.reverse")}</span></label><div id="lagReversePortWrap" class="impl-port-wrap hidden"><label>${tx("create.port.label")}</label><input id="lagReversePort" type="number" min="1" max="65535" value="3213"><div id="lagReversePortHint" class="port-hint"></div></div></div><div class="impl-card"><label class="checkbox-row checkbox-row-switch"><input id="lagEnableHTTP" type="checkbox"><span>${tx("create.lagrange.impl.http")}</span></label><div id="lagHTTPPortWrap" class="impl-port-wrap hidden"><label>${tx("create.port.label")}</label><input id="lagHTTPPort" type="number" min="1" max="65535" value="3214"><div id="lagHTTPPortHint" class="port-hint"></div></div></div></div></div></div>`,
+      `<div class="form-grid config-grid"><div><label>${tx("create.source.label")}</label><select id="lagSource"><option value="auto" selected>${tx("create.source.auto")}</option><option value="url">${tx("create.source.url")}</option><option value="upload">${tx("create.source.upload")}</option></select></div><div><label>${tx("create.lagrange.version.label")}</label><select id="lagVersion"></select></div><div id="lagUploadWrap" class="config-span-full"><label>${tx("create.lagrange.package")}</label><input id="lagPackage" type="file" accept=".zip"></div><div id="lagUrlWrap" class="config-span-full hidden"><label>${tx("create.url.label")}</label><input id="lagURL" type="text" placeholder="https://..."></div><div class="config-span-full"><div class="impl-grid"><div class="impl-card"><label class="checkbox-row checkbox-row-switch"><input id="lagEnableForward" class="force-on-switch" type="checkbox" checked disabled><span>${tx("create.lagrange.impl.forward.required")}</span></label><div id="lagForwardPortWrap" class="impl-port-wrap"><label>${tx("create.port.label")}</label><input id="lagPort" type="number" min="1" max="65535" value="3212"><div id="lagPortHint" class="port-hint"></div></div></div><div class="impl-card"><label class="checkbox-row checkbox-row-switch"><input id="lagEnableReverse" type="checkbox"><span>${tx("create.lagrange.impl.reverse")}</span></label><div id="lagReversePortWrap" class="impl-port-wrap hidden"><label>${tx("create.port.label")}</label><input id="lagReversePort" type="number" min="1" max="65535" value="3213"><div id="lagReversePortHint" class="port-hint"></div></div></div><div class="impl-card"><label class="checkbox-row checkbox-row-switch"><input id="lagEnableHTTP" type="checkbox"><span>${tx("create.lagrange.impl.http")}</span></label><div id="lagHTTPPortWrap" class="impl-port-wrap hidden"><label>${tx("create.port.label")}</label><input id="lagHTTPPort" type="number" min="1" max="65535" value="3214"><div id="lagHTTPPortHint" class="port-hint"></div></div></div></div></div></div>`,
       tx("create.lagrange.notice"),
     );
     const signCard = createCard(
@@ -2652,9 +2648,7 @@
         ),
         tx("create.type.summary.autostart").replace(
           "{value}",
-          E.createAutoStart.value === "true"
-            ? tx("common.yes")
-            : tx("common.no"),
+          E.createAutoStart.checked ? tx("common.yes") : tx("common.no"),
         ),
         E.createRestartEnabled.checked
           ? tx("create.type.summary.restart_on")
@@ -2887,7 +2881,7 @@
     S.createGetSignURL = null;
     E.createRegistry.value = "";
     E.createDisplay.value = "";
-    E.createAutoStart.value = "false";
+    E.createAutoStart.checked = false;
     E.createRestartEnabled.checked = false;
     E.createRestartDelay.value = 3;
     E.createRestartMax.value = 3;
@@ -2961,7 +2955,7 @@
       const t = E.createType.value,
         id = E.createRegistry.value.trim(),
         name = E.createDisplay.value.trim() || id,
-        auto = E.createAutoStart.value === "true",
+        auto = E.createAutoStart.checked,
         rs = {
           enabled: E.createRestartEnabled.checked,
           delay_seconds: Number(E.createRestartDelay.value || 0),
