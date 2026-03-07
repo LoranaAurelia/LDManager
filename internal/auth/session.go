@@ -25,8 +25,14 @@ type SessionManager struct {
 	maxEntries      int
 	cleanupInterval time.Duration
 	lastCleanup     time.Time
+	seq             uint64
 	mu              sync.Mutex
-	sessions        map[string]int64
+	sessions        map[string]sessionRecord
+}
+
+type sessionRecord struct {
+	exp int64
+	seq uint64
 }
 
 type sessionTokenPayload struct {
@@ -56,7 +62,7 @@ func NewSessionManager(cookieName string, cookiePath string, trustProxy bool, tt
 		maxEntries:      maxEntries,
 		cleanupInterval: cleanupInterval,
 		lastCleanup:     time.Now(),
-		sessions:        make(map[string]int64),
+		sessions:        make(map[string]sessionRecord),
 	}
 }
 
@@ -84,9 +90,10 @@ func (m *SessionManager) Create(w http.ResponseWriter, r *http.Request) error {
 
 	m.mu.Lock()
 	m.maybeCleanupLocked(now.Unix())
-	m.sessions[sid] = expireAt
+	m.seq++
+	m.sessions[sid] = sessionRecord{exp: expireAt, seq: m.seq}
 	if len(m.sessions) > m.maxEntries {
-		m.evictOldestLocked()
+		m.evictOldestLocked(sid)
 	}
 	m.mu.Unlock()
 
@@ -142,11 +149,11 @@ func (m *SessionManager) IsAuthenticated(r *http.Request) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.maybeCleanupLocked(nowUnix)
-	storedExp, exists := m.sessions[payload.SID]
+	stored, exists := m.sessions[payload.SID]
 	if !exists {
 		return false
 	}
-	if storedExp != payload.Exp || nowUnix > storedExp {
+	if stored.exp != payload.Exp || nowUnix > stored.exp {
 		delete(m.sessions, payload.SID)
 		return false
 	}
@@ -181,21 +188,26 @@ func (m *SessionManager) maybeCleanupLocked(nowUnix int64) {
 	if now.Sub(m.lastCleanup) < m.cleanupInterval {
 		return
 	}
-	for sid, exp := range m.sessions {
-		if nowUnix > exp {
+	for sid, rec := range m.sessions {
+		if nowUnix > rec.exp {
 			delete(m.sessions, sid)
 		}
 	}
 	m.lastCleanup = now
 }
 
-func (m *SessionManager) evictOldestLocked() {
+func (m *SessionManager) evictOldestLocked(exceptSID string) {
 	var oldestSID string
 	var oldestExp int64
-	for sid, exp := range m.sessions {
-		if oldestSID == "" || exp < oldestExp {
+	var oldestSeq uint64
+	for sid, rec := range m.sessions {
+		if sid == exceptSID {
+			continue
+		}
+		if oldestSID == "" || rec.exp < oldestExp || (rec.exp == oldestExp && rec.seq < oldestSeq) {
 			oldestSID = sid
-			oldestExp = exp
+			oldestExp = rec.exp
+			oldestSeq = rec.seq
 		}
 	}
 	if oldestSID != "" {

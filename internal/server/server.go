@@ -161,15 +161,17 @@ func (s *Server) applyRuntimeConfig(next config.Config) {
 	s.cfg = next
 
 	s.passwordStore = auth.NewPasswordStore(next.PasswordHashPath())
-	s.sessions = auth.NewSessionManager(
-		next.SessionCookieName,
-		next.BasePath,
-		next.TrustProxyHeaders,
-		time.Duration(next.SessionTTL())*time.Hour,
-		next.SessionSecret,
-		next.SessionMaxEntries,
-		time.Duration(next.SessionCleanupInterval)*time.Second,
-	)
+	if sessionSettingsChanged(prev, next) {
+		s.sessions = auth.NewSessionManager(
+			next.SessionCookieName,
+			next.BasePath,
+			next.TrustProxyHeaders,
+			time.Duration(next.SessionTTL())*time.Hour,
+			next.SessionSecret,
+			next.SessionMaxEntries,
+			time.Duration(next.SessionCleanupInterval)*time.Second,
+		)
+	}
 	s.loginProtector = newLoginProtector(next)
 
 	if strings.TrimSpace(prev.DataDir) == strings.TrimSpace(next.DataDir) {
@@ -182,6 +184,28 @@ func (s *Server) applyRuntimeConfig(next config.Config) {
 	s.sealdiceDeployer = deploy.NewSealdiceDeployer(next.DataDir)
 	s.lagrangeDeployer = deploy.NewLagrangeDeployer(next.DataDir)
 	s.llbotDeployer = deploy.NewLLBotDeployer(next.DataDir)
+}
+
+func sessionSettingsChanged(prev config.Config, next config.Config) bool {
+	if prev.SessionCookieName != next.SessionCookieName {
+		return true
+	}
+	if prev.BasePath != next.BasePath {
+		return true
+	}
+	if prev.TrustProxyHeaders != next.TrustProxyHeaders {
+		return true
+	}
+	if prev.SessionTTL() != next.SessionTTL() {
+		return true
+	}
+	if prev.SessionSecret != next.SessionSecret {
+		return true
+	}
+	if prev.SessionMaxEntries != next.SessionMaxEntries {
+		return true
+	}
+	return prev.SessionCleanupInterval != next.SessionCleanupInterval
 }
 
 // buildHandler 组装 API、服务代理、静态资源与 SPA 回退路由。
