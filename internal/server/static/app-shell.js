@@ -574,13 +574,6 @@
 
   function bindSidebarToggle() {
     const btn = $("sidebarFloatToggle");
-    let lastToggleAt = 0;
-    const toggleFromInput = () => {
-      const now = Date.now();
-      if (now - lastToggleAt < 220) return;
-      lastToggleAt = now;
-      toggleSidebar();
-    };
     try {
       collapsed = window.localStorage.getItem("ldm.sidebar.collapsed") === "1";
     } catch (_) {
@@ -588,19 +581,14 @@
     }
     setSidebarCollapsed(collapsed);
     if (btn) {
-      btn.addEventListener("pointerup", (e) => {
-        if (e.button !== 0) return;
-        e.preventDefault();
-        toggleFromInput();
-      });
       btn.addEventListener("click", (e) => {
         e.preventDefault();
-        toggleFromInput();
+        toggleSidebar();
       });
       btn.addEventListener("keydown", (e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
-          toggleFromInput();
+          toggleSidebar();
         }
       });
     }
