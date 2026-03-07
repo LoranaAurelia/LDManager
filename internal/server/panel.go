@@ -19,22 +19,27 @@ type panelSettingsRequest struct {
 	Mode   string `json:"mode"`
 	Raw    string `json:"raw"`
 	Config struct {
-		ListenHost                string `json:"listen_host"`
-		ListenPort                int    `json:"listen_port"`
-		BasePath                  string `json:"base_path"`
-		TrustProxyHeaders         bool   `json:"trust_proxy_headers"`
-		DisableHTTPSWarning       bool   `json:"disable_https_warning"`
-		LogRetentionCount         int    `json:"log_retention_count"`
-		LogRetentionDays          int    `json:"log_retention_days"`
-		LogMaxMB                  int    `json:"log_max_mb"`
-		FileManagerEnabled        *bool  `json:"file_manager_enabled"`
-		FileUploadMaxMB           *int   `json:"file_upload_max_mb"`
-		LoginProtectEnabled       *bool  `json:"login_protect_enabled"`
-		LoginProtectMaxAttempts   *int   `json:"login_protect_max_attempts"`
-		LoginProtectWindowSeconds *int   `json:"login_protect_window_seconds"`
-		LoginProtectBlockSeconds  *int   `json:"login_protect_block_seconds"`
-		MetricsRefreshSec         int    `json:"metrics_refresh_seconds"`
-		SessionTTLHours           int    `json:"session_ttl_hours"`
+		ListenHost                      string `json:"listen_host"`
+		ListenPort                      int    `json:"listen_port"`
+		BasePath                        string `json:"base_path"`
+		TrustProxyHeaders               bool   `json:"trust_proxy_headers"`
+		DisableHTTPSWarning             bool   `json:"disable_https_warning"`
+		LogRetentionCount               int    `json:"log_retention_count"`
+		LogRetentionDays                int    `json:"log_retention_days"`
+		LogMaxMB                        int    `json:"log_max_mb"`
+		FileManagerEnabled              *bool  `json:"file_manager_enabled"`
+		FileUploadMaxMB                 *int   `json:"file_upload_max_mb"`
+		LoginProtectEnabled             *bool  `json:"login_protect_enabled"`
+		LoginProtectMaxAttempts         *int   `json:"login_protect_max_attempts"`
+		LoginProtectWindowSeconds       *int   `json:"login_protect_window_seconds"`
+		LoginProtectBlockSeconds        *int   `json:"login_protect_block_seconds"`
+		LoginProtectMaxBuckets          *int   `json:"login_protect_max_buckets"`
+		LoginProtectBucketIdleTTL       *int   `json:"login_protect_bucket_idle_ttl_seconds"`
+		LoginProtectCleanupInterval     *int   `json:"login_protect_cleanup_interval_seconds"`
+		MetricsRefreshSec               int    `json:"metrics_refresh_seconds"`
+		SessionTTLHours                 int    `json:"session_ttl_hours"`
+		SessionMaxEntries               *int   `json:"session_max_entries"`
+		SessionCleanupIntervalInSeconds *int   `json:"session_cleanup_interval_seconds"`
 	} `json:"config"`
 }
 
@@ -184,8 +189,23 @@ func buildNextPanelConfig(current config.Config, body panelSettingsRequest) (con
 	if body.Config.LoginProtectBlockSeconds != nil {
 		next.LoginProtect.BlockSeconds = *body.Config.LoginProtectBlockSeconds
 	}
+	if body.Config.LoginProtectMaxBuckets != nil {
+		next.LoginProtect.MaxBuckets = *body.Config.LoginProtectMaxBuckets
+	}
+	if body.Config.LoginProtectBucketIdleTTL != nil {
+		next.LoginProtect.BucketIdleTTLSeconds = *body.Config.LoginProtectBucketIdleTTL
+	}
+	if body.Config.LoginProtectCleanupInterval != nil {
+		next.LoginProtect.CleanupIntervalSeconds = *body.Config.LoginProtectCleanupInterval
+	}
 	next.MetricsRefreshSec = body.Config.MetricsRefreshSec
 	next.SessionTTLHours = body.Config.SessionTTLHours
+	if body.Config.SessionMaxEntries != nil {
+		next.SessionMaxEntries = *body.Config.SessionMaxEntries
+	}
+	if body.Config.SessionCleanupIntervalInSeconds != nil {
+		next.SessionCleanupInterval = *body.Config.SessionCleanupIntervalInSeconds
+	}
 
 	return next, nil
 }
