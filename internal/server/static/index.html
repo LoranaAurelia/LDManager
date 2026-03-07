@@ -402,7 +402,7 @@
               <h4>访问与安全</h4>
               <div class="form-grid config-grid">
                 <div>
-                  <label id="panelSessionTTLLabel"></label>
+                  <div class="label-with-tip"><label id="panelSessionTTLLabel"></label><span class="hint-icon" data-tip-key="panel.settings.tip.session_ttl">i</span></div>
                   <input id="panelSessionTTL" type="number" min="1">
                 </div>
                 <div>
@@ -418,16 +418,36 @@
                   <label class="checkbox-row checkbox-row-switch"><input id="panelDisableHTTPSWarn" type="checkbox"><span id="panelDisableHTTPSWarnText"></span></label>
                 </div>
                 <div>
-                  <label id="panelLoginProtectMaxAttemptsLabel"></label>
+                  <div class="label-with-tip"><label id="panelLoginProtectMaxAttemptsLabel"></label><span class="hint-icon" data-tip-key="panel.settings.tip.login_protect_max_attempts">i</span></div>
                   <input id="panelLoginProtectMaxAttempts" type="number" min="1" max="10000">
                 </div>
                 <div>
-                  <label id="panelLoginProtectWindowLabel"></label>
+                  <div class="label-with-tip"><label id="panelLoginProtectWindowLabel"></label><span class="hint-icon" data-tip-key="panel.settings.tip.login_protect_window_seconds">i</span></div>
                   <input id="panelLoginProtectWindow" type="number" min="1" max="86400">
                 </div>
                 <div>
-                  <label id="panelLoginProtectBlockLabel"></label>
+                  <div class="label-with-tip"><label id="panelLoginProtectBlockLabel"></label><span class="hint-icon" data-tip-key="panel.settings.tip.login_protect_block_seconds">i</span></div>
                   <input id="panelLoginProtectBlock" type="number" min="1" max="86400">
+                </div>
+                <div>
+                  <div class="label-with-tip"><label id="panelLoginProtectMaxBucketsLabel"></label><span class="hint-icon" data-tip-key="panel.settings.tip.login_protect_max_buckets">i</span></div>
+                  <input id="panelLoginProtectMaxBuckets" type="number" min="100" max="200000">
+                </div>
+                <div>
+                  <div class="label-with-tip"><label id="panelLoginProtectBucketIdleTTLLabel"></label><span class="hint-icon" data-tip-key="panel.settings.tip.login_protect_bucket_idle_ttl">i</span></div>
+                  <input id="panelLoginProtectBucketIdleTTL" type="number" min="60" max="604800">
+                </div>
+                <div>
+                  <div class="label-with-tip"><label id="panelLoginProtectCleanupIntervalLabel"></label><span class="hint-icon" data-tip-key="panel.settings.tip.login_protect_cleanup_interval">i</span></div>
+                  <input id="panelLoginProtectCleanupInterval" type="number" min="10" max="3600">
+                </div>
+                <div>
+                  <div class="label-with-tip"><label id="panelSessionMaxEntriesLabel"></label><span class="hint-icon" data-tip-key="panel.settings.tip.session_max_entries">i</span></div>
+                  <input id="panelSessionMaxEntries" type="number" min="100" max="200000">
+                </div>
+                <div>
+                  <div class="label-with-tip"><label id="panelSessionCleanupIntervalLabel"></label><span class="hint-icon" data-tip-key="panel.settings.tip.session_cleanup_interval">i</span></div>
+                  <input id="panelSessionCleanupInterval" type="number" min="10" max="3600">
                 </div>
               </div>
             </div>
@@ -439,7 +459,7 @@
                   <input id="panelMetricsRefresh" type="number" min="1" max="3600">
                 </div>
                 <div>
-                  <div class="label-with-tip"><label id="panelFileManagerEnabledLabel"></label><span class="hint-icon" data-tip="关闭后将拒绝前端文件管理请求（列表、上传、删除、重命名、编辑等操作）。">i</span></div>
+                  <div class="label-with-tip"><label id="panelFileManagerEnabledLabel"></label><span class="hint-icon" data-tip-key="panel.settings.tip.file_manager_enabled">i</span></div>
                   <label class="checkbox-row checkbox-row-switch"><input id="panelFileManagerEnabled" type="checkbox"><span id="panelFileManagerEnabledText"></span></label>
                 </div>
                 <div>
@@ -513,10 +533,6 @@
               <label id="createDisplayLabel"></label>
               <input id="createDisplay" type="text">
             </div>
-            <div>
-              <label id="createAutoStartLabel"></label>
-              <select id="createAutoStart"></select>
-            </div>
           </div>
         </div>
 
@@ -525,6 +541,9 @@
         <div class="stack-block card-block config-card">
           <h3 id="restartTitle"></h3>
           <div class="form-grid config-grid">
+            <div>
+              <label class="checkbox-row checkbox-row-switch"><input id="createAutoStart" type="checkbox"><span id="createAutoStartLabel"></span></label>
+            </div>
             <div>
               <label class="checkbox-row checkbox-row-switch"><input id="createRestartEnabled" type="checkbox"><span id="restartEnabledLabel"></span></label>
             </div>
@@ -781,5 +800,4 @@
   <script src="app.js"></script>
 </body>
 </html>
-
 
