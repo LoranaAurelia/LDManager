@@ -30,15 +30,20 @@ type Config struct {
 		UploadMaxMB int  `yaml:"upload_max_mb" json:"upload_max_mb"`
 	} `yaml:"file_manager" json:"file_manager"`
 	LoginProtect struct {
-		Enabled       bool `yaml:"enabled" json:"enabled"`
-		MaxAttempts   int  `yaml:"max_attempts" json:"max_attempts"`
-		WindowSeconds int  `yaml:"window_seconds" json:"window_seconds"`
-		BlockSeconds  int  `yaml:"block_seconds" json:"block_seconds"`
+		Enabled                bool `yaml:"enabled" json:"enabled"`
+		MaxAttempts            int  `yaml:"max_attempts" json:"max_attempts"`
+		WindowSeconds          int  `yaml:"window_seconds" json:"window_seconds"`
+		BlockSeconds           int  `yaml:"block_seconds" json:"block_seconds"`
+		MaxBuckets             int  `yaml:"max_buckets" json:"max_buckets"`
+		BucketIdleTTLSeconds   int  `yaml:"bucket_idle_ttl_seconds" json:"bucket_idle_ttl_seconds"`
+		CleanupIntervalSeconds int  `yaml:"cleanup_interval_seconds" json:"cleanup_interval_seconds"`
 	} `yaml:"login_protect" json:"login_protect"`
-	MetricsRefreshSec int    `yaml:"metrics_refresh_seconds" json:"metrics_refresh_seconds"`
-	SessionCookieName string `yaml:"session_cookie_name" json:"session_cookie_name"`
-	SessionTTLHours   int    `yaml:"session_ttl_hours" json:"session_ttl_hours"`
-	SessionSecret     string `yaml:"session_secret" json:"session_secret"`
+	MetricsRefreshSec      int    `yaml:"metrics_refresh_seconds" json:"metrics_refresh_seconds"`
+	SessionCookieName      string `yaml:"session_cookie_name" json:"session_cookie_name"`
+	SessionTTLHours        int    `yaml:"session_ttl_hours" json:"session_ttl_hours"`
+	SessionSecret          string `yaml:"session_secret" json:"session_secret"`
+	SessionMaxEntries      int    `yaml:"session_max_entries" json:"session_max_entries"`
+	SessionCleanupInterval int    `yaml:"session_cleanup_interval_seconds" json:"session_cleanup_interval_seconds"`
 }
 
 // Default 返回默认配置。
@@ -62,20 +67,28 @@ func Default() Config {
 			UploadMaxMB: 2048,
 		},
 		LoginProtect: struct {
-			Enabled       bool `yaml:"enabled" json:"enabled"`
-			MaxAttempts   int  `yaml:"max_attempts" json:"max_attempts"`
-			WindowSeconds int  `yaml:"window_seconds" json:"window_seconds"`
-			BlockSeconds  int  `yaml:"block_seconds" json:"block_seconds"`
+			Enabled                bool `yaml:"enabled" json:"enabled"`
+			MaxAttempts            int  `yaml:"max_attempts" json:"max_attempts"`
+			WindowSeconds          int  `yaml:"window_seconds" json:"window_seconds"`
+			BlockSeconds           int  `yaml:"block_seconds" json:"block_seconds"`
+			MaxBuckets             int  `yaml:"max_buckets" json:"max_buckets"`
+			BucketIdleTTLSeconds   int  `yaml:"bucket_idle_ttl_seconds" json:"bucket_idle_ttl_seconds"`
+			CleanupIntervalSeconds int  `yaml:"cleanup_interval_seconds" json:"cleanup_interval_seconds"`
 		}{
-			Enabled:       true,
-			MaxAttempts:   20,
-			WindowSeconds: 600,
-			BlockSeconds:  600,
+			Enabled:                true,
+			MaxAttempts:            20,
+			WindowSeconds:          600,
+			BlockSeconds:           600,
+			MaxBuckets:             10000,
+			BucketIdleTTLSeconds:   3600,
+			CleanupIntervalSeconds: 300,
 		},
-		MetricsRefreshSec: 2,
-		SessionCookieName: "sealpanel_session",
-		SessionTTLHours:   48,
-		SessionSecret:     mustNewSecret(),
+		MetricsRefreshSec:      2,
+		SessionCookieName:      "sealpanel_session",
+		SessionTTLHours:        48,
+		SessionSecret:          mustNewSecret(),
+		SessionMaxEntries:      10000,
+		SessionCleanupInterval: 300,
 	}
 }
 
@@ -186,6 +199,15 @@ func (c *Config) normalize() {
 	if c.LoginProtect.BlockSeconds <= 0 {
 		c.LoginProtect.BlockSeconds = 600
 	}
+	if c.LoginProtect.MaxBuckets <= 0 {
+		c.LoginProtect.MaxBuckets = 10000
+	}
+	if c.LoginProtect.BucketIdleTTLSeconds <= 0 {
+		c.LoginProtect.BucketIdleTTLSeconds = 3600
+	}
+	if c.LoginProtect.CleanupIntervalSeconds <= 0 {
+		c.LoginProtect.CleanupIntervalSeconds = 300
+	}
 	if c.MetricsRefreshSec <= 0 {
 		c.MetricsRefreshSec = 2
 	}
@@ -194,6 +216,12 @@ func (c *Config) normalize() {
 	}
 	if c.SessionTTLHours <= 0 {
 		c.SessionTTLHours = 48
+	}
+	if c.SessionMaxEntries <= 0 {
+		c.SessionMaxEntries = 10000
+	}
+	if c.SessionCleanupInterval <= 0 {
+		c.SessionCleanupInterval = 300
 	}
 
 	base := strings.TrimSpace(c.BasePath)
@@ -243,6 +271,21 @@ func (c Config) Validate() error {
 	}
 	if c.LoginProtect.BlockSeconds < 1 || c.LoginProtect.BlockSeconds > 86400 {
 		return fmt.Errorf("invalid login_protect.block_seconds: %d", c.LoginProtect.BlockSeconds)
+	}
+	if c.LoginProtect.MaxBuckets < 100 || c.LoginProtect.MaxBuckets > 200000 {
+		return fmt.Errorf("invalid login_protect.max_buckets: %d", c.LoginProtect.MaxBuckets)
+	}
+	if c.LoginProtect.BucketIdleTTLSeconds < 60 || c.LoginProtect.BucketIdleTTLSeconds > 7*86400 {
+		return fmt.Errorf("invalid login_protect.bucket_idle_ttl_seconds: %d", c.LoginProtect.BucketIdleTTLSeconds)
+	}
+	if c.LoginProtect.CleanupIntervalSeconds < 10 || c.LoginProtect.CleanupIntervalSeconds > 3600 {
+		return fmt.Errorf("invalid login_protect.cleanup_interval_seconds: %d", c.LoginProtect.CleanupIntervalSeconds)
+	}
+	if c.SessionMaxEntries < 100 || c.SessionMaxEntries > 200000 {
+		return fmt.Errorf("invalid session_max_entries: %d", c.SessionMaxEntries)
+	}
+	if c.SessionCleanupInterval < 10 || c.SessionCleanupInterval > 3600 {
+		return fmt.Errorf("invalid session_cleanup_interval_seconds: %d", c.SessionCleanupInterval)
 	}
 	if strings.TrimSpace(c.SessionSecret) == "" {
 		return errors.New("session_secret cannot be empty")
