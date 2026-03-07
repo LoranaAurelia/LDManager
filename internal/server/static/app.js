@@ -23,7 +23,8 @@
     editor: { path: "", saved: "", dirty: false },
     logs: { all: "", paused: false, timer: 0 },
     logHistory: { items: [], name: "", content: "" },
-    deploy: { name: "", timer: 0 },
+    deploy: { name: "", timer: 0, preparing: false },
+    createSubmitting: false,
     qq: { name: "", timer: 0 },
     dashTimer: 0,
     metricsRefreshSeconds: 2,
@@ -963,6 +964,11 @@
     E.panelConfigSaveBtn.textContent = tx("panel.settings.save_form");
     E.panelRawTitle.textContent = tx("panel.settings.raw_title");
     E.panelRawSaveBtn.textContent = tx("panel.settings.save_raw");
+    document.querySelectorAll(".hint-icon[data-tip-key]").forEach((el) => {
+      const key = el.getAttribute("data-tip-key");
+      if (!key) return;
+      el.setAttribute("data-tip", tx(key));
+    });
     E.createTitle.textContent = tx("create.title");
     E.createSub.textContent = tx("create.subtitle");
     E.createCloseBtn.textContent = tx("action.close");
@@ -2950,7 +2956,25 @@
       ? tx("create.lagrange.ping_ok").replace("{avg}", r.avg_ms)
       : tx("create.lagrange.ping_fail");
   }
+  function setCreateSubmitting(next) {
+    S.createSubmitting = !!next;
+    if (E.createSubmitBtn) E.createSubmitBtn.disabled = !!next;
+  }
+  function depPrepare() {
+    S.deploy.preparing = true;
+    S.deploy.name = "";
+    if (S.deploy.timer) clearInterval(S.deploy.timer);
+    S.deploy.timer = 0;
+    setPre(E.deployLogBox, tx("deploy.logs.waiting"));
+    show(E.deployLogModal);
+  }
+  async function runDeploy(req) {
+    depPrepare();
+    return await req();
+  }
   async function submitCreate() {
+    if (S.createSubmitting) return;
+    setCreateSubmitting(true);
     try {
       const t = E.createType.value,
         id = E.createRegistry.value.trim(),
@@ -2984,22 +3008,26 @@
             ["restart_max_crash_count", String(rs.max_crash_count)],
           ].forEach(([k, v]) => fd.append(k, v));
           fd.append("package", f);
-          r = await j("deploy/sealdice/upload", { method: "POST", body: fd });
+          r = await runDeploy(() =>
+            j("deploy/sealdice/upload", { method: "POST", body: fd }),
+          );
         } else {
           const sealURL = String($("sealURL").value || "").trim();
           if (sealSource === "url" && !sealURL) throw new Error(tx("create.url.required"));
-          r = await j("deploy/sealdice/auto", {
-            method: "POST",
-            body: JSON.stringify({
-              source: sealSource,
-              url: sealSource === "url" ? sealURL : "",
-              registry_name: id,
-              display_name: name,
-              port,
-              auto_start: auto,
-              restart: rs,
+          r = await runDeploy(() =>
+            j("deploy/sealdice/auto", {
+              method: "POST",
+              body: JSON.stringify({
+                source: sealSource,
+                url: sealSource === "url" ? sealURL : "",
+                registry_name: id,
+                display_name: name,
+                port,
+                auto_start: auto,
+                restart: rs,
+              }),
             }),
-          });
+          );
         }
       } else if (t === "Lagrange") {
         const pForward = await validatePortField("lagPort", "lagPortHint", "");
@@ -3051,30 +3079,34 @@
             ["restart_max_crash_count", String(rs.max_crash_count)],
           ].forEach(([k, v]) => fd.append(k, v));
           fd.append("package", f);
-          r = await j("deploy/lagrange/upload", { method: "POST", body: fd });
+          r = await runDeploy(() =>
+            j("deploy/lagrange/upload", { method: "POST", body: fd }),
+          );
         } else {
           const lagURL = String($("lagURL").value || "").trim();
           if (lagSource === "url" && !lagURL) throw new Error(tx("create.url.required"));
-          r = await j("deploy/lagrange/auto", {
-            method: "POST",
-            body: JSON.stringify({
-              source: lagSource,
-              registry_name: id,
-              display_name: name,
-              auto_start: auto,
-              version: $("lagVersion").value,
-              download_url: lagSource === "url" ? lagURL : "",
-              port: pForward.port,
-              enable_forward_ws: true,
-              forward_ws_port: pForward.port,
-              sign_server_url: signURL,
-              enable_reverse_ws: $("lagEnableReverse").checked,
-              reverse_ws_port: reversePort,
-              enable_http: $("lagEnableHTTP").checked,
-              http_port: httpPort,
-              restart: rs,
+          r = await runDeploy(() =>
+            j("deploy/lagrange/auto", {
+              method: "POST",
+              body: JSON.stringify({
+                source: lagSource,
+                registry_name: id,
+                display_name: name,
+                auto_start: auto,
+                version: $("lagVersion").value,
+                download_url: lagSource === "url" ? lagURL : "",
+                port: pForward.port,
+                enable_forward_ws: true,
+                forward_ws_port: pForward.port,
+                sign_server_url: signURL,
+                enable_reverse_ws: $("lagEnableReverse").checked,
+                reverse_ws_port: reversePort,
+                enable_http: $("lagEnableHTTP").checked,
+                http_port: httpPort,
+                restart: rs,
+              }),
             }),
-          });
+          );
         }
       } else {
         const qs = await j("llbot/qq/status");
@@ -3101,27 +3133,32 @@
             ["restart_max_crash_count", String(rs.max_crash_count)],
           ].forEach(([k, v]) => fd.append(k, v));
           fd.append("package", f);
-          r = await j("deploy/llbot/upload", { method: "POST", body: fd });
+          r = await runDeploy(() =>
+            j("deploy/llbot/upload", { method: "POST", body: fd }),
+          );
         } else {
           const llURL = String($("llURL").value || "").trim();
           if (llSource === "url" && !llURL) throw new Error(tx("create.url.required"));
-          r = await j("deploy/llbot/auto", {
-            method: "POST",
-            body: JSON.stringify({
-              source: llSource,
-              url: llSource === "url" ? llURL : "",
-              registry_name: id,
-              display_name: name,
-              port,
-              auto_start: auto,
-              version: $("llVersion").value,
-              restart: rs,
+          r = await runDeploy(() =>
+            j("deploy/llbot/auto", {
+              method: "POST",
+              body: JSON.stringify({
+                source: llSource,
+                url: llSource === "url" ? llURL : "",
+                registry_name: id,
+                display_name: name,
+                port,
+                auto_start: auto,
+                version: $("llVersion").value,
+                restart: rs,
+              }),
             }),
-          });
+          );
         }
       }
       hide(E.createModal);
       if (r.deploy_log) depOpen(r.deploy_log, true);
+      else S.deploy.preparing = false;
       await loadSvcs(true);
       if (r.service && r.service.id) {
         view("services");
@@ -3129,10 +3166,19 @@
       }
       toast(tx("toast.deploy_done"), "ok");
     } catch (e) {
+      if (S.deploy.preparing) {
+        setPre(
+          E.deployLogBox,
+          `${tx("deploy.logs.load_failed")}: ${e.message}`,
+        );
+      }
       toast(e.message, "error");
+    } finally {
+      setCreateSubmitting(false);
     }
   }
   function depOpen(name, auto) {
+    S.deploy.preparing = false;
     S.deploy.name = name;
     E.deployLogBox.textContent = "";
     show(E.deployLogModal);
@@ -3162,6 +3208,7 @@
     tick();
   }
   function depClose() {
+    S.deploy.preparing = false;
     if (S.deploy.timer) clearInterval(S.deploy.timer);
     S.deploy.timer = 0;
     hide(E.deployLogModal);
@@ -3315,6 +3362,21 @@
     } catch (_) {
       S.sign = [];
     }
+  }
+  function bindOverlayDismiss(overlay, onDismiss) {
+    if (!overlay || typeof onDismiss !== "function") return;
+    let pointerDownOnOverlay = false;
+    overlay.addEventListener("pointerdown", (e) => {
+      pointerDownOnOverlay = e.target === overlay;
+    });
+    overlay.addEventListener("pointerup", (e) => {
+      const pointerUpOnOverlay = e.target === overlay;
+      if (pointerDownOnOverlay && pointerUpOnOverlay) onDismiss();
+      pointerDownOnOverlay = false;
+    });
+    overlay.addEventListener("pointercancel", () => {
+      pointerDownOnOverlay = false;
+    });
   }
   function bind() {
     E.detailForceBtn.textContent = tx("detail.force_stop");
@@ -3616,15 +3678,8 @@
       E.qqModal,
       E.qrModal,
       E.logHistoryModal,
-    ].forEach(
-      (o) =>
-        (o.onclick = (e) => {
-          if (e.target === o) hide(o);
-        }),
-    );
-    E.confirmModal.onclick = (e) => {
-      if (e.target === E.confirmModal) closeConfirmDialog(false);
-    };
+    ].forEach((o) => bindOverlayDismiss(o, () => hide(o)));
+    bindOverlayDismiss(E.confirmModal, () => closeConfirmDialog(false));
   }
   async function enter() {
     hide(E.authInit);
