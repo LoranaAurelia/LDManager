@@ -194,6 +194,10 @@
     "panelBasePath",
     "panelSessionTTLLabel",
     "panelSessionTTL",
+    "panelSessionMaxEntriesLabel",
+    "panelSessionMaxEntries",
+    "panelSessionCleanupIntervalLabel",
+    "panelSessionCleanupInterval",
     "panelTrustProxyLabel",
     "panelTrustProxy",
     "panelTrustProxyText",
@@ -424,6 +428,14 @@
       : "/api/" + p.replace(/^\/+/, "");
     return appPath(clean);
   }
+  function trMessage(raw) {
+    if (typeof raw !== "string") return raw;
+    const key = raw.trim();
+    if (!key) return raw;
+    const translated =
+      typeof window.text === "function" ? window.text(key, key) : key;
+    return translated && translated !== key ? translated : raw;
+  }
   async function j(p, o = {}) {
     const r = await fetch(ep(p), {
       credentials: "same-origin",
@@ -437,6 +449,9 @@
     });
     const t = r.headers.get("content-type") || "";
     const d = t.includes("application/json") ? await r.json() : await r.text();
+    if (d && typeof d === "object" && typeof d.message === "string") {
+      d.message = trMessage(d.message);
+    }
     if (!r.ok) {
       const e = new Error(
         typeof d === "string" ? d : (d && d.message) || "HTTP " + r.status,
@@ -856,6 +871,11 @@
     );
     const panelLoginProtectWindowLabel = $("panelLoginProtectWindowLabel");
     const panelLoginProtectBlockLabel = $("panelLoginProtectBlockLabel");
+    const panelLoginProtectMaxBucketsLabel = $("panelLoginProtectMaxBucketsLabel");
+    const panelLoginProtectBucketIdleTTLLabel = $("panelLoginProtectBucketIdleTTLLabel");
+    const panelLoginProtectCleanupIntervalLabel = $("panelLoginProtectCleanupIntervalLabel");
+    const panelSessionMaxEntriesLabel = $("panelSessionMaxEntriesLabel");
+    const panelSessionCleanupIntervalLabel = $("panelSessionCleanupIntervalLabel");
     if (panelFileManagerEnabledLabel)
       panelFileManagerEnabledLabel.textContent = tx(
         "panel.settings.file_manager_enabled",
@@ -914,6 +934,26 @@
     if (panelLoginProtectBlockLabel)
       panelLoginProtectBlockLabel.textContent = tx(
         "panel.settings.login_protect_block_seconds",
+      );
+    if (panelLoginProtectMaxBucketsLabel)
+      panelLoginProtectMaxBucketsLabel.textContent = tx(
+        "panel.settings.login_protect_max_buckets",
+      );
+    if (panelLoginProtectBucketIdleTTLLabel)
+      panelLoginProtectBucketIdleTTLLabel.textContent = tx(
+        "panel.settings.login_protect_bucket_idle_ttl",
+      );
+    if (panelLoginProtectCleanupIntervalLabel)
+      panelLoginProtectCleanupIntervalLabel.textContent = tx(
+        "panel.settings.login_protect_cleanup_interval",
+      );
+    if (panelSessionMaxEntriesLabel)
+      panelSessionMaxEntriesLabel.textContent = tx(
+        "panel.settings.session_max_entries",
+      );
+    if (panelSessionCleanupIntervalLabel)
+      panelSessionCleanupIntervalLabel.textContent = tx(
+        "panel.settings.session_cleanup_interval",
       );
     updateHTTPSNotice();
     if (E.overviewRssLabel) E.overviewRssLabel.textContent = tx("detail.overview.rss");
@@ -1032,10 +1072,6 @@
       ["size", tx("file.table.size")],
       ["time", tx("file.table.mtime")],
       ["type", tx("file.table.type")],
-    ]);
-    fill(E.createAutoStart, [
-      ["false", tx("create.autostart.no")],
-      ["true", tx("create.autostart.yes")],
     ]);
     fill(E.createType, [
       ["Sealdice", tx("create.type.sealdice")],
@@ -2052,6 +2088,11 @@
       const panelLoginProtectMaxAttempts = $("panelLoginProtectMaxAttempts");
       const panelLoginProtectWindow = $("panelLoginProtectWindow");
       const panelLoginProtectBlock = $("panelLoginProtectBlock");
+      const panelLoginProtectMaxBuckets = $("panelLoginProtectMaxBuckets");
+      const panelLoginProtectBucketIdleTTL = $("panelLoginProtectBucketIdleTTL");
+      const panelLoginProtectCleanupInterval = $("panelLoginProtectCleanupInterval");
+      const panelSessionMaxEntries = $("panelSessionMaxEntries");
+      const panelSessionCleanupInterval = $("panelSessionCleanupInterval");
       if (panelFileManagerEnabled)
         panelFileManagerEnabled.checked = !!(
           c.file_manager && c.file_manager.enabled
@@ -2072,6 +2113,19 @@
       if (panelLoginProtectBlock)
         panelLoginProtectBlock.value =
           (c.login_protect && c.login_protect.block_seconds) || 600;
+      if (panelLoginProtectMaxBuckets)
+        panelLoginProtectMaxBuckets.value =
+          (c.login_protect && c.login_protect.max_buckets) || 10000;
+      if (panelLoginProtectBucketIdleTTL)
+        panelLoginProtectBucketIdleTTL.value =
+          (c.login_protect && c.login_protect.bucket_idle_ttl_seconds) || 3600;
+      if (panelLoginProtectCleanupInterval)
+        panelLoginProtectCleanupInterval.value =
+          (c.login_protect && c.login_protect.cleanup_interval_seconds) || 300;
+      if (panelSessionMaxEntries)
+        panelSessionMaxEntries.value = c.session_max_entries || 10000;
+      if (panelSessionCleanupInterval)
+        panelSessionCleanupInterval.value = c.session_cleanup_interval_seconds || 300;
       E.panelRawConfig.value = d.raw || "";
       E.panelRawMeta.textContent = tx("panel.settings.raw_meta").replace(
         "{path}",
@@ -2207,6 +2261,11 @@
       const panelLoginProtectMaxAttempts = $("panelLoginProtectMaxAttempts");
       const panelLoginProtectWindow = $("panelLoginProtectWindow");
       const panelLoginProtectBlock = $("panelLoginProtectBlock");
+      const panelLoginProtectMaxBuckets = $("panelLoginProtectMaxBuckets");
+      const panelLoginProtectBucketIdleTTL = $("panelLoginProtectBucketIdleTTL");
+      const panelLoginProtectCleanupInterval = $("panelLoginProtectCleanupInterval");
+      const panelSessionMaxEntries = $("panelSessionMaxEntries");
+      const panelSessionCleanupInterval = $("panelSessionCleanupInterval");
       const panelDisableHTTPSWarn = $("panelDisableHTTPSWarn");
       const uploadMax = Number(
         (panelFileUploadMaxMB && panelFileUploadMaxMB.value) || 0,
@@ -2253,6 +2312,55 @@
         throw new Error(
           tx("panel.settings.invalid_login_protect_block_seconds"),
         );
+      const protectMaxBuckets = Number(
+        panelLoginProtectMaxBuckets && panelLoginProtectMaxBuckets.value,
+      );
+      const protectBucketIdle = Number(
+        panelLoginProtectBucketIdleTTL && panelLoginProtectBucketIdleTTL.value,
+      );
+      const protectCleanup = Number(
+        panelLoginProtectCleanupInterval && panelLoginProtectCleanupInterval.value,
+      );
+      const sessionMaxEntries = Number(
+        panelSessionMaxEntries && panelSessionMaxEntries.value,
+      );
+      const sessionCleanup = Number(
+        panelSessionCleanupInterval && panelSessionCleanupInterval.value,
+      );
+      if (
+        !Number.isInteger(protectMaxBuckets) ||
+        protectMaxBuckets < 100 ||
+        protectMaxBuckets > 200000
+      )
+        throw new Error(tx("panel.settings.invalid_login_protect_max_buckets"));
+      if (
+        !Number.isInteger(protectBucketIdle) ||
+        protectBucketIdle < 60 ||
+        protectBucketIdle > 604800
+      )
+        throw new Error(
+          tx("panel.settings.invalid_login_protect_bucket_idle_ttl"),
+        );
+      if (
+        !Number.isInteger(protectCleanup) ||
+        protectCleanup < 10 ||
+        protectCleanup > 3600
+      )
+        throw new Error(
+          tx("panel.settings.invalid_login_protect_cleanup_interval"),
+        );
+      if (
+        !Number.isInteger(sessionMaxEntries) ||
+        sessionMaxEntries < 100 ||
+        sessionMaxEntries > 200000
+      )
+        throw new Error(tx("panel.settings.invalid_session_max_entries"));
+      if (
+        !Number.isInteger(sessionCleanup) ||
+        sessionCleanup < 10 ||
+        sessionCleanup > 3600
+      )
+        throw new Error(tx("panel.settings.invalid_session_cleanup_interval"));
       const d = await j("panel/settings", {
         method: "POST",
         body: JSON.stringify({
@@ -2282,6 +2390,11 @@
             login_protect_max_attempts: protectMax,
             login_protect_window_seconds: protectWindow,
             login_protect_block_seconds: protectBlock,
+            login_protect_max_buckets: protectMaxBuckets,
+            login_protect_bucket_idle_ttl_seconds: protectBucketIdle,
+            login_protect_cleanup_interval_seconds: protectCleanup,
+            session_max_entries: sessionMaxEntries,
+            session_cleanup_interval_seconds: sessionCleanup,
           },
         }),
       });
@@ -2329,6 +2442,11 @@
       const panelLoginProtectMaxAttempts = $("panelLoginProtectMaxAttempts");
       const panelLoginProtectWindow = $("panelLoginProtectWindow");
       const panelLoginProtectBlock = $("panelLoginProtectBlock");
+      const panelLoginProtectMaxBuckets = $("panelLoginProtectMaxBuckets");
+      const panelLoginProtectBucketIdleTTL = $("panelLoginProtectBucketIdleTTL");
+      const panelLoginProtectCleanupInterval = $("panelLoginProtectCleanupInterval");
+      const panelSessionMaxEntries = $("panelSessionMaxEntries");
+      const panelSessionCleanupInterval = $("panelSessionCleanupInterval");
       if (panelFileManagerEnabled)
         panelFileManagerEnabled.checked = !!(
           c.file_manager && c.file_manager.enabled
@@ -2349,6 +2467,19 @@
       if (panelLoginProtectBlock)
         panelLoginProtectBlock.value =
           (c.login_protect && c.login_protect.block_seconds) || 600;
+      if (panelLoginProtectMaxBuckets)
+        panelLoginProtectMaxBuckets.value =
+          (c.login_protect && c.login_protect.max_buckets) || 10000;
+      if (panelLoginProtectBucketIdleTTL)
+        panelLoginProtectBucketIdleTTL.value =
+          (c.login_protect && c.login_protect.bucket_idle_ttl_seconds) || 3600;
+      if (panelLoginProtectCleanupInterval)
+        panelLoginProtectCleanupInterval.value =
+          (c.login_protect && c.login_protect.cleanup_interval_seconds) || 300;
+      if (panelSessionMaxEntries)
+        panelSessionMaxEntries.value = c.session_max_entries || 10000;
+      if (panelSessionCleanupInterval)
+        panelSessionCleanupInterval.value = c.session_cleanup_interval_seconds || 300;
       S.metricsRefreshSeconds = Number(c.metrics_refresh_seconds || 2);
       S.disableHTTPSWarning = !!c.disable_https_warning;
       dashPolling();
@@ -2475,7 +2606,7 @@
       .join("");
     const deployCard = createCard(
       TXT_SAFE("create.group.deploy", "部署 / 运行配置"),
-      `<div class="form-grid config-grid"><div><label>${tx("create.source.label")}</label><select id="lagSource"><option value="auto" selected>${tx("create.source.auto")}</option><option value="url">${tx("create.source.url")}</option><option value="upload">${tx("create.source.upload")}</option></select></div><div class="config-span-full"><label>${tx("create.lagrange.version.label")}</label><select id="lagVersion"></select></div><div id="lagUploadWrap" class="config-span-full"><label>${tx("create.lagrange.package")}</label><input id="lagPackage" type="file" accept=".zip"></div><div id="lagUrlWrap" class="config-span-full hidden"><label>${tx("create.url.label")}</label><input id="lagURL" type="text" placeholder="https://..."></div><div class="config-span-full"><div class="impl-grid"><div class="impl-card"><label class="checkbox-row checkbox-row-switch"><input id="lagEnableForward" class="force-on-switch" type="checkbox" checked disabled><span>${tx("create.lagrange.impl.forward.required")}</span></label><div id="lagForwardPortWrap" class="impl-port-wrap"><label>${tx("create.port.label")}</label><input id="lagPort" type="number" min="1" max="65535" value="3212"><div id="lagPortHint" class="port-hint"></div></div></div><div class="impl-card"><label class="checkbox-row checkbox-row-switch"><input id="lagEnableReverse" type="checkbox"><span>${tx("create.lagrange.impl.reverse")}</span></label><div id="lagReversePortWrap" class="impl-port-wrap hidden"><label>${tx("create.port.label")}</label><input id="lagReversePort" type="number" min="1" max="65535" value="3213"><div id="lagReversePortHint" class="port-hint"></div></div></div><div class="impl-card"><label class="checkbox-row checkbox-row-switch"><input id="lagEnableHTTP" type="checkbox"><span>${tx("create.lagrange.impl.http")}</span></label><div id="lagHTTPPortWrap" class="impl-port-wrap hidden"><label>${tx("create.port.label")}</label><input id="lagHTTPPort" type="number" min="1" max="65535" value="3214"><div id="lagHTTPPortHint" class="port-hint"></div></div></div></div></div></div>`,
+      `<div class="form-grid config-grid"><div><label>${tx("create.source.label")}</label><select id="lagSource"><option value="auto" selected>${tx("create.source.auto")}</option><option value="url">${tx("create.source.url")}</option><option value="upload">${tx("create.source.upload")}</option></select></div><div><label>${tx("create.lagrange.version.label")}</label><select id="lagVersion"></select></div><div id="lagUploadWrap" class="config-span-full"><label>${tx("create.lagrange.package")}</label><input id="lagPackage" type="file" accept=".zip"></div><div id="lagUrlWrap" class="config-span-full hidden"><label>${tx("create.url.label")}</label><input id="lagURL" type="text" placeholder="https://..."></div><div class="config-span-full"><div class="impl-grid"><div class="impl-card"><label class="checkbox-row checkbox-row-switch"><input id="lagEnableForward" class="force-on-switch" type="checkbox" checked disabled><span>${tx("create.lagrange.impl.forward.required")}</span></label><div id="lagForwardPortWrap" class="impl-port-wrap"><label>${tx("create.port.label")}</label><input id="lagPort" type="number" min="1" max="65535" value="3212"><div id="lagPortHint" class="port-hint"></div></div></div><div class="impl-card"><label class="checkbox-row checkbox-row-switch"><input id="lagEnableReverse" type="checkbox"><span>${tx("create.lagrange.impl.reverse")}</span></label><div id="lagReversePortWrap" class="impl-port-wrap hidden"><label>${tx("create.port.label")}</label><input id="lagReversePort" type="number" min="1" max="65535" value="3213"><div id="lagReversePortHint" class="port-hint"></div></div></div><div class="impl-card"><label class="checkbox-row checkbox-row-switch"><input id="lagEnableHTTP" type="checkbox"><span>${tx("create.lagrange.impl.http")}</span></label><div id="lagHTTPPortWrap" class="impl-port-wrap hidden"><label>${tx("create.port.label")}</label><input id="lagHTTPPort" type="number" min="1" max="65535" value="3214"><div id="lagHTTPPortHint" class="port-hint"></div></div></div></div></div></div>`,
       tx("create.lagrange.notice"),
     );
     const signCard = createCard(
@@ -2517,9 +2648,7 @@
         ),
         tx("create.type.summary.autostart").replace(
           "{value}",
-          E.createAutoStart.value === "true"
-            ? tx("common.yes")
-            : tx("common.no"),
+          E.createAutoStart.checked ? tx("common.yes") : tx("common.no"),
         ),
         E.createRestartEnabled.checked
           ? tx("create.type.summary.restart_on")
@@ -2752,7 +2881,7 @@
     S.createGetSignURL = null;
     E.createRegistry.value = "";
     E.createDisplay.value = "";
-    E.createAutoStart.value = "false";
+    E.createAutoStart.checked = false;
     E.createRestartEnabled.checked = false;
     E.createRestartDelay.value = 3;
     E.createRestartMax.value = 3;
@@ -2826,7 +2955,7 @@
       const t = E.createType.value,
         id = E.createRegistry.value.trim(),
         name = E.createDisplay.value.trim() || id,
-        auto = E.createAutoStart.value === "true",
+        auto = E.createAutoStart.checked,
         rs = {
           enabled: E.createRestartEnabled.checked,
           delay_seconds: Number(E.createRestartDelay.value || 0),

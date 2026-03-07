@@ -127,7 +127,7 @@ func New(cfg config.Config, configPath string) (*Server, error) {
 		cfg:              cfg,
 		configPath:       configPath,
 		passwordStore:    auth.NewPasswordStore(cfg.PasswordHashPath()),
-		sessions:         auth.NewSessionManager(cfg.SessionCookieName, cfg.BasePath, cfg.TrustProxyHeaders, time.Duration(cfg.SessionTTL())*time.Hour, cfg.SessionSecret),
+		sessions:         auth.NewSessionManager(cfg.SessionCookieName, cfg.BasePath, cfg.TrustProxyHeaders, time.Duration(cfg.SessionTTL())*time.Hour, cfg.SessionSecret, cfg.SessionMaxEntries, time.Duration(cfg.SessionCleanupInterval)*time.Second),
 		serviceStore:     store,
 		serviceMgr:       services.NewManager(store, cfg.DataDir, cfg.LogRetentionCount, cfg.LogRetentionDays, cfg.LogMaxMB),
 		sealdiceDeployer: deploy.NewSealdiceDeployer(cfg.DataDir),
@@ -161,13 +161,17 @@ func (s *Server) applyRuntimeConfig(next config.Config) {
 	s.cfg = next
 
 	s.passwordStore = auth.NewPasswordStore(next.PasswordHashPath())
-	s.sessions = auth.NewSessionManager(
-		next.SessionCookieName,
-		next.BasePath,
-		next.TrustProxyHeaders,
-		time.Duration(next.SessionTTL())*time.Hour,
-		next.SessionSecret,
-	)
+	if sessionSettingsChanged(prev, next) {
+		s.sessions = auth.NewSessionManager(
+			next.SessionCookieName,
+			next.BasePath,
+			next.TrustProxyHeaders,
+			time.Duration(next.SessionTTL())*time.Hour,
+			next.SessionSecret,
+			next.SessionMaxEntries,
+			time.Duration(next.SessionCleanupInterval)*time.Second,
+		)
+	}
 	s.loginProtector = newLoginProtector(next)
 
 	if strings.TrimSpace(prev.DataDir) == strings.TrimSpace(next.DataDir) {
@@ -180,6 +184,28 @@ func (s *Server) applyRuntimeConfig(next config.Config) {
 	s.sealdiceDeployer = deploy.NewSealdiceDeployer(next.DataDir)
 	s.lagrangeDeployer = deploy.NewLagrangeDeployer(next.DataDir)
 	s.llbotDeployer = deploy.NewLLBotDeployer(next.DataDir)
+}
+
+func sessionSettingsChanged(prev config.Config, next config.Config) bool {
+	if prev.SessionCookieName != next.SessionCookieName {
+		return true
+	}
+	if prev.BasePath != next.BasePath {
+		return true
+	}
+	if prev.TrustProxyHeaders != next.TrustProxyHeaders {
+		return true
+	}
+	if prev.SessionTTL() != next.SessionTTL() {
+		return true
+	}
+	if prev.SessionSecret != next.SessionSecret {
+		return true
+	}
+	if prev.SessionMaxEntries != next.SessionMaxEntries {
+		return true
+	}
+	return prev.SessionCleanupInterval != next.SessionCleanupInterval
 }
 
 // buildHandler 组装 API、服务代理、静态资源与 SPA 回退路由。
@@ -389,7 +415,7 @@ func (s *Server) findServiceUsingPort(port int, excludeID string) (*services.Ser
 // checkPortAvailable 先查托管服务，再查系统监听端口，判断端口是否可用。
 func (s *Server) checkPortAvailable(port int, excludeID string) (bool, string, *services.Service, error) {
 	if port < 1 || port > 65535 {
-		return false, "invalid port", nil, nil
+		return false, "api.deploy.invalid_port", nil, nil
 	}
 	owner, err := s.findServiceUsingPort(port, excludeID)
 	if err != nil {
@@ -416,17 +442,17 @@ func (s *Server) handlePortCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "method not allowed"})
+		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "api.method_not_allowed"})
 		return
 	}
-	// reqBody 鐎规矮绠熺拠銉δ侀崸妞惧▏閻劎娈戦弫鐗堝祦缂佹挻鐎妴?
+	// reqBody 定义请求体结构。
 	type reqBody struct {
 		Port      int    `json:"port"`
 		ServiceID string `json:"service_id"`
 	}
 	var body reqBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "invalid json body"})
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "api.invalid_json_body"})
 		return
 	}
 
@@ -450,7 +476,7 @@ func (s *Server) handlePortCheck(w http.ResponseWriter, r *http.Request) {
 // handleBootstrapStatus 返回初始化状态（是否已设置密码等）。
 func (s *Server) handleBootstrapStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "method not allowed"})
+		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "api.method_not_allowed"})
 		return
 	}
 
@@ -471,7 +497,7 @@ func (s *Server) handleUpdateCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "method not allowed"})
+		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "api.method_not_allowed"})
 		return
 	}
 
@@ -490,11 +516,11 @@ func (s *Server) handleUpdateApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "method not allowed"})
+		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "api.method_not_allowed"})
 		return
 	}
 	if runtime.GOOS != "linux" {
-		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "direct update is only supported on linux"})
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "api.update.direct_linux_only"})
 		return
 	}
 
@@ -506,13 +532,13 @@ func (s *Server) handleUpdateApply(w http.ResponseWriter, r *http.Request) {
 	if !result.HasUpdate {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"updated": false,
-			"message": "already up to date",
+			"message": "api.update.already_up_to_date",
 		})
 		return
 	}
 	downloadURL := strings.TrimSpace(result.DownloadURL)
 	if downloadURL == "" {
-		writeJSON(w, http.StatusBadGateway, jsonMessage{Message: "update download url is empty"})
+		writeJSON(w, http.StatusBadGateway, jsonMessage{Message: "api.update.download_url_empty"})
 		return
 	}
 
@@ -534,7 +560,7 @@ func (s *Server) handleUpdateApply(w http.ResponseWriter, r *http.Request) {
 			"method":           "script",
 			"remote_version":   result.RemoteVersion,
 			"restart_required": true,
-			"message":          "fallback installer update executed",
+			"message":          "api.update.fallback_installer_executed",
 		})
 		return
 	}
@@ -543,7 +569,7 @@ func (s *Server) handleUpdateApply(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"updated":          true,
 		"method":           "direct",
-		"message":          "update applied, panel will restart shortly",
+		"message":          "api.update.applied_restarting",
 		"remote_version":   result.RemoteVersion,
 		"restart_required": true,
 	})
@@ -552,11 +578,11 @@ func (s *Server) handleUpdateApply(w http.ResponseWriter, r *http.Request) {
 // handleInitPassword 首次初始化密码。
 func (s *Server) handleInitPassword(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "method not allowed"})
+		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "api.method_not_allowed"})
 		return
 	}
 	if s.passwordStore.Exists() {
-		writeJSON(w, http.StatusConflict, jsonMessage{Message: "password already initialized"})
+		writeJSON(w, http.StatusConflict, jsonMessage{Message: "api.auth.password_already_initialized"})
 		return
 	}
 
@@ -571,23 +597,23 @@ func (s *Server) handleInitPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, jsonMessage{Message: "password initialized"})
+	writeJSON(w, http.StatusCreated, jsonMessage{Message: "api.auth.password_initialized"})
 }
 
 // handleLogin 校验密码并签发会话 Cookie。
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "method not allowed"})
+		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "api.method_not_allowed"})
 		return
 	}
 	if !s.passwordStore.Exists() {
-		writeJSON(w, http.StatusPreconditionFailed, jsonMessage{Message: "password is not initialized"})
+		writeJSON(w, http.StatusPreconditionFailed, jsonMessage{Message: "api.auth.password_not_initialized"})
 		return
 	}
 	if ok, retryAfter := s.loginProtector.Allow(r); !ok {
 		w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
 		writeJSON(w, http.StatusTooManyRequests, map[string]any{
-			"message":     "too many login attempts, please try later",
+			"message":     "api.auth.too_many_login_attempts",
 			"retry_after": retryAfter,
 		})
 		return
@@ -602,13 +628,13 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	ok, err := s.passwordStore.Verify(password)
 	if err != nil {
 		log.Printf("auth: password verify failed: %v", err)
-		writeJSON(w, http.StatusInternalServerError, jsonMessage{Message: "failed to verify password"})
+		writeJSON(w, http.StatusInternalServerError, jsonMessage{Message: "api.auth.verify_password_failed"})
 		return
 	}
 	if !ok {
 		retryAfter := s.loginProtector.RecordFailure(r)
 		log.Printf("auth: login failed from %s", clientAddressForLog(r, s.cfg.TrustProxyHeaders))
-		writeJSON(w, http.StatusUnauthorized, jsonMessage{Message: "invalid credentials"})
+		writeJSON(w, http.StatusUnauthorized, jsonMessage{Message: "api.auth.invalid_credentials"})
 		if retryAfter > 0 {
 			w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
 		}
@@ -617,33 +643,33 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	if err := s.sessions.Create(w, r); err != nil {
 		log.Printf("auth: session create failed: %v", err)
-		writeJSON(w, http.StatusInternalServerError, jsonMessage{Message: "failed to create session"})
+		writeJSON(w, http.StatusInternalServerError, jsonMessage{Message: "api.auth.create_session_failed"})
 		return
 	}
 	s.loginProtector.RecordSuccess(r)
 	log.Printf("auth: login success from %s", clientAddressForLog(r, s.cfg.TrustProxyHeaders))
-	writeJSON(w, http.StatusOK, jsonMessage{Message: "login succeeded"})
+	writeJSON(w, http.StatusOK, jsonMessage{Message: "api.auth.login_succeeded"})
 }
 
 // handleLogout 清除会话 Cookie。
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "method not allowed"})
+		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "api.method_not_allowed"})
 		return
 	}
 	s.sessions.Destroy(w, r)
 	log.Printf("auth: logout from %s", clientAddressForLog(r, s.cfg.TrustProxyHeaders))
-	writeJSON(w, http.StatusOK, jsonMessage{Message: "logged out"})
+	writeJSON(w, http.StatusOK, jsonMessage{Message: "api.auth.logged_out"})
 }
 
 // handleMe 返回当前认证状态。
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "method not allowed"})
+		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "api.method_not_allowed"})
 		return
 	}
 	if !s.sessions.IsAuthenticated(r) {
-		writeJSON(w, http.StatusUnauthorized, jsonMessage{Message: "not authenticated"})
+		writeJSON(w, http.StatusUnauthorized, jsonMessage{Message: "api.auth.not_authenticated"})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -661,7 +687,7 @@ func (s *Server) handleServices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "method not allowed"})
+		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "api.method_not_allowed"})
 		return
 	}
 	items, err := s.serviceStore.List()
@@ -678,11 +704,11 @@ func (s *Server) handleDeploySealdiceAuto(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "method not allowed"})
+		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "api.method_not_allowed"})
 		return
 	}
 
-	// reqBody 鐎规矮绠熺拠銉δ侀崸妞惧▏閻劎娈戦弫鐗堝祦缂佹挻鐎妴?
+	// reqBody 定义请求体结构。
 	type reqBody struct {
 		Source       string `json:"source"`
 		URL          string `json:"url"`
@@ -698,7 +724,7 @@ func (s *Server) handleDeploySealdiceAuto(w http.ResponseWriter, r *http.Request
 	}
 	var body reqBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "invalid json body"})
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "api.invalid_json_body"})
 		return
 	}
 
@@ -707,7 +733,7 @@ func (s *Server) handleDeploySealdiceAuto(w http.ResponseWriter, r *http.Request
 		source = "auto"
 	}
 	if source != "auto" && source != "url" {
-		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "invalid source"})
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "api.deploy.invalid_source"})
 		return
 	}
 	resolvedURL := strings.TrimSpace(body.URL)
@@ -720,7 +746,7 @@ func (s *Server) handleDeploySealdiceAuto(w http.ResponseWriter, r *http.Request
 		resolvedURL = release.DownloadURL
 	}
 	if strings.TrimSpace(resolvedURL) == "" {
-		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "download url is empty"})
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "api.deploy.download_url_empty"})
 		return
 	}
 
@@ -768,11 +794,11 @@ func (s *Server) handleDeploySealdiceUpload(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "method not allowed"})
+		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "api.method_not_allowed"})
 		return
 	}
 	if err := r.ParseMultipartForm(1024 << 20); err != nil {
-		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "invalid multipart form"})
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "api.deploy.invalid_multipart_form"})
 		return
 	}
 
@@ -780,7 +806,7 @@ func (s *Server) handleDeploySealdiceUpload(w http.ResponseWriter, r *http.Reque
 	displayName := strings.TrimSpace(r.FormValue("display_name"))
 	port, err := strconv.Atoi(strings.TrimSpace(r.FormValue("port")))
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "invalid port"})
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "api.deploy.invalid_port"})
 		return
 	}
 	autoStart := parseBool(r.FormValue("auto_start"))
@@ -790,7 +816,7 @@ func (s *Server) handleDeploySealdiceUpload(w http.ResponseWriter, r *http.Reque
 
 	file, _, err := r.FormFile("package")
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "package file is required"})
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "api.deploy.package_file_required"})
 		return
 	}
 	defer func() { _ = file.Close() }()
@@ -847,11 +873,11 @@ func (s *Server) handleDeployLagrangeAuto(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "method not allowed"})
+		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "api.method_not_allowed"})
 		return
 	}
 
-	// reqBody 鐎规矮绠熺拠銉δ侀崸妞惧▏閻劎娈戦弫鐗堝祦缂佹挻鐎妴?
+	// reqBody 定义请求体结构。
 	type reqBody struct {
 		Source          string `json:"source"`
 		RegistryName    string `json:"registry_name"`
@@ -876,7 +902,7 @@ func (s *Server) handleDeployLagrangeAuto(w http.ResponseWriter, r *http.Request
 	}
 	var body reqBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "invalid json body"})
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "api.invalid_json_body"})
 		return
 	}
 
@@ -893,7 +919,7 @@ func (s *Server) handleDeployLagrangeAuto(w http.ResponseWriter, r *http.Request
 		body.HTTPPort = 18082
 	}
 	if !body.EnableForwardWS {
-		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "forward ws must be enabled"})
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "api.deploy.forward_ws_required"})
 		return
 	}
 	source := strings.ToLower(strings.TrimSpace(body.Source))
@@ -901,7 +927,7 @@ func (s *Server) handleDeployLagrangeAuto(w http.ResponseWriter, r *http.Request
 		source = "auto"
 	}
 	if source != "auto" && source != "url" {
-		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "invalid source"})
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "api.deploy.invalid_source"})
 		return
 	}
 
@@ -919,7 +945,7 @@ func (s *Server) handleDeployLagrangeAuto(w http.ResponseWriter, r *http.Request
 		}
 	}
 	if strings.TrimSpace(resolvedURL) == "" {
-		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "download url is empty"})
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "api.deploy.download_url_empty"})
 		return
 	}
 
@@ -981,11 +1007,11 @@ func (s *Server) handleDeployLagrangeUpload(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "method not allowed"})
+		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "api.method_not_allowed"})
 		return
 	}
 	if err := r.ParseMultipartForm(1024 << 20); err != nil {
-		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "invalid multipart form"})
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "api.deploy.invalid_multipart_form"})
 		return
 	}
 
@@ -1015,7 +1041,7 @@ func (s *Server) handleDeployLagrangeUpload(w http.ResponseWriter, r *http.Reque
 
 	file, _, err := r.FormFile("package")
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "package file is required"})
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "api.deploy.package_file_required"})
 		return
 	}
 	defer func() { _ = file.Close() }()
@@ -1087,11 +1113,11 @@ func (s *Server) handleDeployLLBotAuto(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "method not allowed"})
+		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "api.method_not_allowed"})
 		return
 	}
 
-	// reqBody 鐎规矮绠熺拠銉δ侀崸妞惧▏閻劎娈戦弫鐗堝祦缂佹挻鐎妴?
+	// reqBody 定义请求体结构。
 	type reqBody struct {
 		Source       string `json:"source"`
 		URL          string `json:"url"`
@@ -1108,7 +1134,7 @@ func (s *Server) handleDeployLLBotAuto(w http.ResponseWriter, r *http.Request) {
 	}
 	var body reqBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "invalid json body"})
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "api.invalid_json_body"})
 		return
 	}
 	if body.Port == 0 {
@@ -1119,11 +1145,11 @@ func (s *Server) handleDeployLLBotAuto(w http.ResponseWriter, r *http.Request) {
 		source = "auto"
 	}
 	if source != "auto" && source != "url" {
-		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "invalid source"})
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "api.deploy.invalid_source"})
 		return
 	}
 	if runtime.GOOS == "linux" && !bootstrap.HasLinuxQQ() {
-		writeJSON(w, http.StatusConflict, jsonMessage{Message: "QQ is not installed, install QQ first"})
+		writeJSON(w, http.StatusConflict, jsonMessage{Message: "api.qq.not_installed"})
 		return
 	}
 
@@ -1141,7 +1167,7 @@ func (s *Server) handleDeployLLBotAuto(w http.ResponseWriter, r *http.Request) {
 	if source == "url" {
 		url := strings.TrimSpace(body.URL)
 		if url == "" {
-			writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "download url is required"})
+			writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "api.deploy.download_url_required"})
 			return
 		}
 		item, err = s.deployLLBotWithInstaller(
@@ -1192,15 +1218,15 @@ func (s *Server) handleDeployLLBotUpload(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "method not allowed"})
+		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "api.method_not_allowed"})
 		return
 	}
 	if runtime.GOOS == "linux" && !bootstrap.HasLinuxQQ() {
-		writeJSON(w, http.StatusConflict, jsonMessage{Message: "QQ is not installed, install QQ first"})
+		writeJSON(w, http.StatusConflict, jsonMessage{Message: "api.qq.not_installed"})
 		return
 	}
 	if err := r.ParseMultipartForm(1024 << 20); err != nil {
-		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "invalid multipart form"})
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "api.deploy.invalid_multipart_form"})
 		return
 	}
 
@@ -1208,7 +1234,7 @@ func (s *Server) handleDeployLLBotUpload(w http.ResponseWriter, r *http.Request)
 	displayName := strings.TrimSpace(r.FormValue("display_name"))
 	port, err := strconv.Atoi(strings.TrimSpace(r.FormValue("port")))
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "invalid port"})
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "api.deploy.invalid_port"})
 		return
 	}
 	autoStart := parseBool(r.FormValue("auto_start"))
@@ -1218,7 +1244,7 @@ func (s *Server) handleDeployLLBotUpload(w http.ResponseWriter, r *http.Request)
 
 	file, _, err := r.FormFile("package")
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "package file is required"})
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "api.deploy.package_file_required"})
 		return
 	}
 	defer func() { _ = file.Close() }()
@@ -1276,7 +1302,7 @@ func (s *Server) handleLLBotQQStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "method not allowed"})
+		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "api.method_not_allowed"})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -1293,16 +1319,16 @@ func (s *Server) handleLLBotQQInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "method not allowed"})
+		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "api.method_not_allowed"})
 		return
 	}
-	// reqBody 鐎规矮绠熺拠銉δ侀崸妞惧▏閻劎娈戦弫鐗堝祦缂佹挻鐎妴?
+	// reqBody 定义请求体结构。
 	type reqBody struct {
 		URL string `json:"url"`
 	}
 	var body reqBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "invalid json body"})
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "api.invalid_json_body"})
 		return
 	}
 	deployLog := s.newDeployLogger("QQ", "linuxqq")
@@ -1318,7 +1344,7 @@ func (s *Server) handleLLBotQQInstall(w http.ResponseWriter, r *http.Request) {
 	}
 	deployLog.Printf("qq: install success")
 	writeJSON(w, http.StatusOK, map[string]any{
-		"message":    "QQ installed",
+		"message":    "api.qq.installed",
 		"deploy_log": deployLog.Name,
 	})
 }
@@ -1329,22 +1355,22 @@ func (s *Server) handleLagrangeSignProbe(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "method not allowed"})
+		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "api.method_not_allowed"})
 		return
 	}
 
-	// reqBody 鐎规矮绠熺拠銉δ侀崸妞惧▏閻劎娈戦弫鐗堝祦缂佹挻鐎妴?
+	// reqBody 定义请求体结构。
 	type reqBody struct {
 		URL string `json:"url"`
 	}
 	var body reqBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "invalid json body"})
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "api.invalid_json_body"})
 		return
 	}
 	base := strings.TrimRight(strings.TrimSpace(body.URL), "/")
 	if base == "" {
-		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "url is required"})
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "api.url.required"})
 		return
 	}
 
@@ -1398,25 +1424,25 @@ func (s *Server) handleLagrangeSignInfo(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "method not allowed"})
+		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "api.method_not_allowed"})
 		return
 	}
 
 	client := &http.Client{Timeout: 20 * time.Second}
 	resp, err := client.Get("https://d1.sealdice.com/sealsign/signinfo.json")
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, jsonMessage{Message: "failed to fetch sign info"})
+		writeJSON(w, http.StatusBadGateway, jsonMessage{Message: "api.sign.fetch_failed"})
 		return
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		writeJSON(w, http.StatusBadGateway, jsonMessage{Message: "failed to fetch sign info"})
+		writeJSON(w, http.StatusBadGateway, jsonMessage{Message: "api.sign.fetch_failed"})
 		return
 	}
 
 	var body any
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadGateway, jsonMessage{Message: "invalid sign info payload"})
+		writeJSON(w, http.StatusBadGateway, jsonMessage{Message: "api.sign.invalid_payload"})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": body})
@@ -1428,7 +1454,7 @@ func (s *Server) handleLagrangeVersions(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "method not allowed"})
+		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "api.method_not_allowed"})
 		return
 	}
 	items, err := update.FetchLagrangeVersions(r.Context(), runtime.GOARCH)
@@ -1747,7 +1773,7 @@ func (s *Server) handleServiceByID(w http.ResponseWriter, r *http.Request) {
 
 	raw := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/services/"), "/")
 	if raw == "" {
-		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "service id is required"})
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "api.service.id_required"})
 		return
 	}
 
@@ -1783,7 +1809,7 @@ func (s *Server) handleServiceByID(w http.ResponseWriter, r *http.Request) {
 	case "qrcode":
 		s.handleServiceQRCode(w, r, id)
 	default:
-		writeJSON(w, http.StatusNotFound, jsonMessage{Message: "unknown action"})
+		writeJSON(w, http.StatusNotFound, jsonMessage{Message: "api.action.unknown"})
 	}
 }
 
@@ -1791,12 +1817,12 @@ func (s *Server) handleServiceByID(w http.ResponseWriter, r *http.Request) {
 // 路径：GET /api/services/{id}
 func (s *Server) handleServiceGet(w http.ResponseWriter, r *http.Request, id string) {
 	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "method not allowed"})
+		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "api.method_not_allowed"})
 		return
 	}
 	item, err := s.serviceStore.Get(id)
 	if err != nil {
-		writeJSON(w, http.StatusNotFound, jsonMessage{Message: "service not found"})
+		writeJSON(w, http.StatusNotFound, jsonMessage{Message: "api.service.not_found"})
 		return
 	}
 	writeJSON(w, http.StatusOK, item)
@@ -1806,7 +1832,7 @@ func (s *Server) handleServiceGet(w http.ResponseWriter, r *http.Request, id str
 // 支持动作：start / stop / force-stop / restart。
 func (s *Server) handleServiceLifecycle(w http.ResponseWriter, r *http.Request, id string, action string) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "method not allowed"})
+		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "api.method_not_allowed"})
 		return
 	}
 
@@ -1837,7 +1863,7 @@ func (s *Server) handleServiceLifecycle(w http.ResponseWriter, r *http.Request, 
 // 约束：服务必须为停止状态，且端口必须可用。
 func (s *Server) handleServicePort(w http.ResponseWriter, r *http.Request, id string) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "method not allowed"})
+		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "api.method_not_allowed"})
 		return
 	}
 	type reqBody struct {
@@ -1845,17 +1871,17 @@ func (s *Server) handleServicePort(w http.ResponseWriter, r *http.Request, id st
 	}
 	var body reqBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "invalid json body"})
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "api.invalid_json_body"})
 		return
 	}
 	if body.Port < 1 || body.Port > 65535 {
-		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "invalid port"})
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "api.deploy.invalid_port"})
 		return
 	}
 
 	item, err := s.serviceStore.Get(id)
 	if err != nil {
-		writeJSON(w, http.StatusNotFound, jsonMessage{Message: "service not found"})
+		writeJSON(w, http.StatusNotFound, jsonMessage{Message: "api.service.not_found"})
 		return
 	}
 	if body.Port == item.Port {
@@ -1863,7 +1889,7 @@ func (s *Server) handleServicePort(w http.ResponseWriter, r *http.Request, id st
 		return
 	}
 	if item.Status == services.StatusRunning {
-		writeJSON(w, http.StatusConflict, jsonMessage{Message: "service must be stopped before updating port"})
+		writeJSON(w, http.StatusConflict, jsonMessage{Message: "api.service.stop_before_update_port"})
 		return
 	}
 	if ok, message, _, err := s.checkPortAvailable(body.Port, id); err != nil {
@@ -1908,11 +1934,11 @@ func (s *Server) handleServicePort(w http.ResponseWriter, r *http.Request, id st
 func (s *Server) handleLagrangeConfig(w http.ResponseWriter, r *http.Request, id string) {
 	item, err := s.serviceStore.Get(id)
 	if err != nil {
-		writeJSON(w, http.StatusNotFound, jsonMessage{Message: "service not found"})
+		writeJSON(w, http.StatusNotFound, jsonMessage{Message: "api.service.not_found"})
 		return
 	}
 	if item.Type != "Lagrange" {
-		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "config action is only supported for Lagrange"})
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "api.config.only_lagrange_supported"})
 		return
 	}
 
@@ -1927,7 +1953,7 @@ func (s *Server) handleLagrangeConfig(w http.ResponseWriter, r *http.Request, id
 	case http.MethodPost:
 		var body deploy.LagrangeConfigState
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "invalid json body"})
+			writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "api.invalid_json_body"})
 			return
 		}
 		current, err := deploy.ReadLagrangeConfig(item.InstallDir)
@@ -1940,7 +1966,7 @@ func (s *Server) handleLagrangeConfig(w http.ResponseWriter, r *http.Request, id
 			return
 		}
 		if item.Status == services.StatusRunning {
-			writeJSON(w, http.StatusConflict, jsonMessage{Message: "service must be stopped before updating config"})
+			writeJSON(w, http.StatusConflict, jsonMessage{Message: "api.config.stop_before_update"})
 			return
 		}
 		if body.EnableForwardWS {
@@ -1982,7 +2008,7 @@ func (s *Server) handleLagrangeConfig(w http.ResponseWriter, r *http.Request, id
 		}
 		writeJSON(w, http.StatusOK, item)
 	default:
-		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "method not allowed"})
+		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "api.method_not_allowed"})
 	}
 }
 
@@ -1991,7 +2017,7 @@ func (s *Server) handleLagrangeConfig(w http.ResponseWriter, r *http.Request, id
 func (s *Server) handleServiceSettings(w http.ResponseWriter, r *http.Request, id string) {
 	item, err := s.serviceStore.Get(id)
 	if err != nil {
-		writeJSON(w, http.StatusNotFound, jsonMessage{Message: "service not found"})
+		writeJSON(w, http.StatusNotFound, jsonMessage{Message: "api.service.not_found"})
 		return
 	}
 
@@ -2031,7 +2057,7 @@ func (s *Server) handleServiceSettings(w http.ResponseWriter, r *http.Request, i
 		}
 		var body reqBody
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "invalid json body"})
+			writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "api.invalid_json_body"})
 			return
 		}
 		item.DisplayName = strings.TrimSpace(body.DisplayName)
@@ -2039,15 +2065,15 @@ func (s *Server) handleServiceSettings(w http.ResponseWriter, r *http.Request, i
 		item.OpenPathURL = strings.TrimSpace(body.OpenPathURL)
 		item.Restart = toRestartPolicy(body.Restart.Enabled, body.Restart.DelaySeconds, body.Restart.MaxCrashCount)
 		if body.LogPolicy.RetentionCount < 0 || body.LogPolicy.RetentionCount > 365 {
-			writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "invalid log_policy.retention_count"})
+			writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "api.log_policy.invalid_retention_count"})
 			return
 		}
 		if body.LogPolicy.RetentionDays < 0 || body.LogPolicy.RetentionDays > 3650 {
-			writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "invalid log_policy.retention_days"})
+			writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "api.log_policy.invalid_retention_days"})
 			return
 		}
 		if body.LogPolicy.MaxMB < 0 || body.LogPolicy.MaxMB > 1024*1024 {
-			writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "invalid log_policy.max_mb"})
+			writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "api.log_policy.invalid_max_mb"})
 			return
 		}
 		item.LogPolicy = services.LogPolicy{
@@ -2061,19 +2087,19 @@ func (s *Server) handleServiceSettings(w http.ResponseWriter, r *http.Request, i
 		}
 		writeJSON(w, http.StatusOK, item)
 	default:
-		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "method not allowed"})
+		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "api.method_not_allowed"})
 	}
 }
 
 // handleServiceLogs 返回服务日志尾部内容，默认 300 行。
 func (s *Server) handleServiceLogs(w http.ResponseWriter, r *http.Request, id string, tail []string) {
 	if r.Method != http.MethodGet && r.Method != http.MethodDelete {
-		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "method not allowed"})
+		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "api.method_not_allowed"})
 		return
 	}
 	item, err := s.serviceStore.Get(id)
 	if err != nil {
-		writeJSON(w, http.StatusNotFound, jsonMessage{Message: "service not found"})
+		writeJSON(w, http.StatusNotFound, jsonMessage{Message: "api.service.not_found"})
 		return
 	}
 	if len(tail) > 0 && tail[0] == "history" {
@@ -2081,7 +2107,7 @@ func (s *Server) handleServiceLogs(w http.ResponseWriter, r *http.Request, id st
 		return
 	}
 	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "method not allowed"})
+		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "api.method_not_allowed"})
 		return
 	}
 	lines := 300
@@ -2110,23 +2136,23 @@ func (s *Server) handleServiceLogHistory(w http.ResponseWriter, r *http.Request,
 				writeJSON(w, http.StatusBadRequest, jsonMessage{Message: clearErr.Error()})
 				return
 			}
-			writeJSON(w, http.StatusOK, jsonMessage{Message: "history logs cleared"})
+			writeJSON(w, http.StatusOK, jsonMessage{Message: "api.logs.history_cleared"})
 			return
 		}
 		name, err := url.PathUnescape(strings.Join(tail, "/"))
 		if err != nil || strings.TrimSpace(name) == "" {
-			writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "invalid history log name"})
+			writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "api.logs.invalid_history_name"})
 			return
 		}
 		if delErr := services.DeleteServiceLogHistory(s.cfg.DataDir, item.ID, name); delErr != nil {
 			writeJSON(w, http.StatusBadRequest, jsonMessage{Message: delErr.Error()})
 			return
 		}
-		writeJSON(w, http.StatusOK, jsonMessage{Message: "history log deleted"})
+		writeJSON(w, http.StatusOK, jsonMessage{Message: "api.logs.history_deleted"})
 		return
 	}
 	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "method not allowed"})
+		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "api.method_not_allowed"})
 		return
 	}
 	if len(tail) == 0 {
@@ -2143,7 +2169,7 @@ func (s *Server) handleServiceLogHistory(w http.ResponseWriter, r *http.Request,
 	}
 	name, err := url.PathUnescape(strings.Join(tail, "/"))
 	if err != nil || strings.TrimSpace(name) == "" {
-		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "invalid history log name"})
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "api.logs.invalid_history_name"})
 		return
 	}
 	lines := 300
@@ -2168,12 +2194,12 @@ func (s *Server) handleServiceLogHistory(w http.ResponseWriter, r *http.Request,
 // handleServiceMetrics 返回单服务资源占用快照。
 func (s *Server) handleServiceMetrics(w http.ResponseWriter, r *http.Request, id string) {
 	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "method not allowed"})
+		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "api.method_not_allowed"})
 		return
 	}
 	item, err := s.serviceStore.Get(id)
 	if err != nil {
-		writeJSON(w, http.StatusNotFound, jsonMessage{Message: "service not found"})
+		writeJSON(w, http.StatusNotFound, jsonMessage{Message: "api.service.not_found"})
 		return
 	}
 	writeJSON(w, http.StatusOK, s.collectServiceMetrics(item))
@@ -2182,7 +2208,7 @@ func (s *Server) handleServiceMetrics(w http.ResponseWriter, r *http.Request, id
 // handleServiceRebuild 触发服务重建流程。
 func (s *Server) handleServiceRebuild(w http.ResponseWriter, r *http.Request, id string) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "method not allowed"})
+		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "api.method_not_allowed"})
 		return
 	}
 	type reqBody struct {
@@ -2201,12 +2227,12 @@ func (s *Server) handleServiceRebuild(w http.ResponseWriter, r *http.Request, id
 // handleServiceRebuildInfo 返回重建来源信息与可用模式。
 func (s *Server) handleServiceRebuildInfo(w http.ResponseWriter, r *http.Request, id string) {
 	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "method not allowed"})
+		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "api.method_not_allowed"})
 		return
 	}
 	item, err := s.serviceStore.Get(id)
 	if err != nil {
-		writeJSON(w, http.StatusNotFound, jsonMessage{Message: "service not found"})
+		writeJSON(w, http.StatusNotFound, jsonMessage{Message: "api.service.not_found"})
 		return
 	}
 	source := "auto"
@@ -2236,38 +2262,38 @@ func (s *Server) handleServiceRebuildInfo(w http.ResponseWriter, r *http.Request
 // handleServiceDelete 删除服务记录与安装目录。
 func (s *Server) handleServiceDelete(w http.ResponseWriter, r *http.Request, id string) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "method not allowed"})
+		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "api.method_not_allowed"})
 		return
 	}
 	if err := s.deleteService(id); err != nil {
 		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, jsonMessage{Message: "service deleted"})
+	writeJSON(w, http.StatusOK, jsonMessage{Message: "api.service.deleted"})
 }
 
 // handleServiceQRCode 返回 Lagrange 登录二维码图片。
 func (s *Server) handleServiceQRCode(w http.ResponseWriter, r *http.Request, id string) {
 	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "method not allowed"})
+		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "api.method_not_allowed"})
 		return
 	}
 	item, err := s.serviceStore.Get(id)
 	if err != nil {
-		writeJSON(w, http.StatusNotFound, jsonMessage{Message: "service not found"})
+		writeJSON(w, http.StatusNotFound, jsonMessage{Message: "api.service.not_found"})
 		return
 	}
 	if item.Type != "Lagrange" {
-		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "qrcode is only supported for Lagrange"})
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "api.qrcode.only_lagrange_supported"})
 		return
 	}
 	qrPath := filepath.Join(strings.TrimSpace(item.InstallDir), "qr-0.png")
 	if _, err := filepath.Abs(qrPath); err != nil {
-		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "invalid qrcode path"})
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "api.qrcode.invalid_path"})
 		return
 	}
 	if _, err := os.Stat(qrPath); err != nil {
-		writeJSON(w, http.StatusNotFound, jsonMessage{Message: "qr-0.png not found"})
+		writeJSON(w, http.StatusNotFound, jsonMessage{Message: "api.qrcode.not_found"})
 		return
 	}
 	http.ServeFile(w, r, qrPath)
@@ -2282,7 +2308,7 @@ func (s *Server) handleServiceProxy(w http.ResponseWriter, r *http.Request) {
 	raw := strings.TrimPrefix(r.URL.Path, "/service/")
 	raw = strings.Trim(raw, "/")
 	if raw == "" {
-		writeJSON(w, http.StatusNotFound, jsonMessage{Message: "service not found"})
+		writeJSON(w, http.StatusNotFound, jsonMessage{Message: "api.service.not_found"})
 		return
 	}
 
@@ -2301,13 +2327,13 @@ func (s *Server) handleDeployLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "method not allowed"})
+		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "api.method_not_allowed"})
 		return
 	}
 
 	name := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/deploy/logs/"), "/")
 	if name == "" || strings.Contains(name, "/") || strings.Contains(name, "\\") {
-		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "invalid log name"})
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "api.logs.invalid_name"})
 		return
 	}
 
@@ -2322,7 +2348,7 @@ func (s *Server) handleDeployLogs(w http.ResponseWriter, r *http.Request) {
 	full := filepath.Clean(filepath.Join(dir, name))
 	cleanDir := filepath.Clean(dir)
 	if full != cleanDir && !strings.HasPrefix(full, cleanDir+string(os.PathSeparator)) {
-		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "invalid log path"})
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "api.logs.invalid_path"})
 		return
 	}
 
@@ -2639,17 +2665,17 @@ func updateLLBotMetaPort(item *services.Service, port int) {
 func (s *Server) proxyToService(w http.ResponseWriter, r *http.Request, id string, restPath string) {
 	item, err := s.serviceStore.Get(id)
 	if err != nil {
-		writeJSON(w, http.StatusNotFound, jsonMessage{Message: "service not found"})
+		writeJSON(w, http.StatusNotFound, jsonMessage{Message: "api.service.not_found"})
 		return
 	}
 	if item.Port < 1 || item.Port > 65535 {
-		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "service port is invalid"})
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "api.proxy.invalid_service_port"})
 		return
 	}
 
 	target, err := url.Parse("http://127.0.0.1:" + strconv.Itoa(item.Port))
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, jsonMessage{Message: "proxy target parse failed"})
+		writeJSON(w, http.StatusInternalServerError, jsonMessage{Message: "api.proxy.target_parse_failed"})
 		return
 	}
 
@@ -2661,7 +2687,7 @@ func (s *Server) proxyToService(w http.ResponseWriter, r *http.Request, id strin
 	}
 	proxy.ErrorHandler = func(rw http.ResponseWriter, req *http.Request, e error) {
 		log.Printf("proxy: id=%s target=%s err=%v", id, target.String(), e)
-		writeJSON(rw, http.StatusBadGateway, jsonMessage{Message: "service is not reachable"})
+		writeJSON(rw, http.StatusBadGateway, jsonMessage{Message: "api.proxy.service_unreachable"})
 	}
 	proxy.ServeHTTP(w, r)
 }
@@ -2818,11 +2844,11 @@ func runInstallerUpdateFallback(ctx context.Context) error {
 
 func (s *Server) requireAuth(w http.ResponseWriter, r *http.Request) bool {
 	if !s.passwordStore.Exists() {
-		writeJSON(w, http.StatusPreconditionFailed, jsonMessage{Message: "password is not initialized"})
+		writeJSON(w, http.StatusPreconditionFailed, jsonMessage{Message: "api.auth.password_not_initialized"})
 		return false
 	}
 	if !s.sessions.IsAuthenticated(r) {
-		writeJSON(w, http.StatusUnauthorized, jsonMessage{Message: "not authenticated"})
+		writeJSON(w, http.StatusUnauthorized, jsonMessage{Message: "api.auth.not_authenticated"})
 		return false
 	}
 	return true
@@ -2830,13 +2856,13 @@ func (s *Server) requireAuth(w http.ResponseWriter, r *http.Request) bool {
 
 // readPasswordFromBody 从请求体解析 password 字段并做基础校验。
 func readPasswordFromBody(r *http.Request) (string, error) {
-	// payload 鐎规矮绠熺拠銉δ侀崸妞惧▏閻劎娈戦弫鐗堝祦缂佹挻鐎妴?
+	// payload 定义请求体结构。
 	type payload struct {
 		Password string `json:"password"`
 	}
 	var body payload
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		return "", errors.New("invalid json body")
+		return "", errors.New("api.invalid_json_body")
 	}
 	pwd := strings.TrimSpace(body.Password)
 	if pwd == "" {

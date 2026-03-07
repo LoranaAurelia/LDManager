@@ -402,7 +402,7 @@
               <h4>访问与安全</h4>
               <div class="form-grid config-grid">
                 <div>
-                  <label id="panelSessionTTLLabel"></label>
+                  <div class="label-with-tip"><label id="panelSessionTTLLabel"></label><span class="hint-icon" data-tip="会话 Cookie 的有效期（小时）。到期后需要重新登录。">i</span></div>
                   <input id="panelSessionTTL" type="number" min="1">
                 </div>
                 <div>
@@ -418,16 +418,36 @@
                   <label class="checkbox-row checkbox-row-switch"><input id="panelDisableHTTPSWarn" type="checkbox"><span id="panelDisableHTTPSWarnText"></span></label>
                 </div>
                 <div>
-                  <label id="panelLoginProtectMaxAttemptsLabel"></label>
+                  <div class="label-with-tip"><label id="panelLoginProtectMaxAttemptsLabel"></label><span class="hint-icon" data-tip="单个登录指纹在统计窗口内允许的最大失败次数。超过后触发封禁。">i</span></div>
                   <input id="panelLoginProtectMaxAttempts" type="number" min="1" max="10000">
                 </div>
                 <div>
-                  <label id="panelLoginProtectWindowLabel"></label>
+                  <div class="label-with-tip"><label id="panelLoginProtectWindowLabel"></label><span class="hint-icon" data-tip="登录失败计数的统计窗口（秒）。超出窗口的历史失败会被忽略。">i</span></div>
                   <input id="panelLoginProtectWindow" type="number" min="1" max="86400">
                 </div>
                 <div>
-                  <label id="panelLoginProtectBlockLabel"></label>
+                  <div class="label-with-tip"><label id="panelLoginProtectBlockLabel"></label><span class="hint-icon" data-tip="达到失败阈值后该指纹的封禁时长（秒）。">i</span></div>
                   <input id="panelLoginProtectBlock" type="number" min="1" max="86400">
+                </div>
+                <div>
+                  <div class="label-with-tip"><label id="panelLoginProtectMaxBucketsLabel"></label><span class="hint-icon" data-tip="登录保护桶的最大数量上限，用于限制内存占用。超过上限会回收最旧桶。">i</span></div>
+                  <input id="panelLoginProtectMaxBuckets" type="number" min="100" max="200000">
+                </div>
+                <div>
+                  <div class="label-with-tip"><label id="panelLoginProtectBucketIdleTTLLabel"></label><span class="hint-icon" data-tip="桶在无活动时保留多久（秒）。超过后会被清理。">i</span></div>
+                  <input id="panelLoginProtectBucketIdleTTL" type="number" min="60" max="604800">
+                </div>
+                <div>
+                  <div class="label-with-tip"><label id="panelLoginProtectCleanupIntervalLabel"></label><span class="hint-icon" data-tip="登录保护桶清理周期（秒）。周期越短越及时，开销也更高。">i</span></div>
+                  <input id="panelLoginProtectCleanupInterval" type="number" min="10" max="3600">
+                </div>
+                <div>
+                  <div class="label-with-tip"><label id="panelSessionMaxEntriesLabel"></label><span class="hint-icon" data-tip="可同时保留的最大活动会话数量。超过上限时会淘汰最早过期的会话。">i</span></div>
+                  <input id="panelSessionMaxEntries" type="number" min="100" max="200000">
+                </div>
+                <div>
+                  <div class="label-with-tip"><label id="panelSessionCleanupIntervalLabel"></label><span class="hint-icon" data-tip="会话清理周期（秒）。用于回收过期会话记录。">i</span></div>
+                  <input id="panelSessionCleanupInterval" type="number" min="10" max="3600">
                 </div>
               </div>
             </div>
@@ -513,10 +533,6 @@
               <label id="createDisplayLabel"></label>
               <input id="createDisplay" type="text">
             </div>
-            <div>
-              <label id="createAutoStartLabel"></label>
-              <select id="createAutoStart"></select>
-            </div>
           </div>
         </div>
 
@@ -525,6 +541,9 @@
         <div class="stack-block card-block config-card">
           <h3 id="restartTitle"></h3>
           <div class="form-grid config-grid">
+            <div>
+              <label class="checkbox-row checkbox-row-switch"><input id="createAutoStart" type="checkbox"><span id="createAutoStartLabel"></span></label>
+            </div>
             <div>
               <label class="checkbox-row checkbox-row-switch"><input id="createRestartEnabled" type="checkbox"><span id="restartEnabledLabel"></span></label>
             </div>
