@@ -200,7 +200,7 @@ a, button, .nav-btn, .service-card, .tree-item { -webkit-tap-highlight-color: tr
   position: fixed;
   top: 0;
   left: calc(344px - 1px);
-  z-index: 125;
+  z-index: 320;
   width: 28px;
   height: 58px;
   min-width: 28px;
@@ -1635,4 +1635,3 @@ input[type="number"]::-webkit-inner-spin-button {
   .modal, .drawer { max-height: calc(100vh - 18px); }
   .overlay { padding: 9px; }
 }
-
