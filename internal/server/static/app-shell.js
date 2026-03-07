@@ -225,7 +225,12 @@
           : text("detail.open_path", detailEntryBtn.textContent || "");
       }
       const createAutoStart = $("createAutoStart");
-      if (createAutoStart && createAutoStart.options.length >= 2) {
+      if (
+        createAutoStart &&
+        createAutoStart.tagName === "SELECT" &&
+        createAutoStart.options &&
+        createAutoStart.options.length >= 2
+      ) {
         createAutoStart.options[0].text = text(
           "common.no",
           createAutoStart.options[0].text,
