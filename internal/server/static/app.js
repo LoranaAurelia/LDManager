@@ -194,6 +194,10 @@
     "panelBasePath",
     "panelSessionTTLLabel",
     "panelSessionTTL",
+    "panelSessionMaxEntriesLabel",
+    "panelSessionMaxEntries",
+    "panelSessionCleanupIntervalLabel",
+    "panelSessionCleanupInterval",
     "panelTrustProxyLabel",
     "panelTrustProxy",
     "panelTrustProxyText",
@@ -424,6 +428,14 @@
       : "/api/" + p.replace(/^\/+/, "");
     return appPath(clean);
   }
+  function trMessage(raw) {
+    if (typeof raw !== "string") return raw;
+    const key = raw.trim();
+    if (!key) return raw;
+    const translated =
+      typeof window.text === "function" ? window.text(key, key) : key;
+    return translated && translated !== key ? translated : raw;
+  }
   async function j(p, o = {}) {
     const r = await fetch(ep(p), {
       credentials: "same-origin",
@@ -437,6 +449,9 @@
     });
     const t = r.headers.get("content-type") || "";
     const d = t.includes("application/json") ? await r.json() : await r.text();
+    if (d && typeof d === "object" && typeof d.message === "string") {
+      d.message = trMessage(d.message);
+    }
     if (!r.ok) {
       const e = new Error(
         typeof d === "string" ? d : (d && d.message) || "HTTP " + r.status,
@@ -856,6 +871,11 @@
     );
     const panelLoginProtectWindowLabel = $("panelLoginProtectWindowLabel");
     const panelLoginProtectBlockLabel = $("panelLoginProtectBlockLabel");
+    const panelLoginProtectMaxBucketsLabel = $("panelLoginProtectMaxBucketsLabel");
+    const panelLoginProtectBucketIdleTTLLabel = $("panelLoginProtectBucketIdleTTLLabel");
+    const panelLoginProtectCleanupIntervalLabel = $("panelLoginProtectCleanupIntervalLabel");
+    const panelSessionMaxEntriesLabel = $("panelSessionMaxEntriesLabel");
+    const panelSessionCleanupIntervalLabel = $("panelSessionCleanupIntervalLabel");
     if (panelFileManagerEnabledLabel)
       panelFileManagerEnabledLabel.textContent = tx(
         "panel.settings.file_manager_enabled",
@@ -914,6 +934,26 @@
     if (panelLoginProtectBlockLabel)
       panelLoginProtectBlockLabel.textContent = tx(
         "panel.settings.login_protect_block_seconds",
+      );
+    if (panelLoginProtectMaxBucketsLabel)
+      panelLoginProtectMaxBucketsLabel.textContent = tx(
+        "panel.settings.login_protect_max_buckets",
+      );
+    if (panelLoginProtectBucketIdleTTLLabel)
+      panelLoginProtectBucketIdleTTLLabel.textContent = tx(
+        "panel.settings.login_protect_bucket_idle_ttl",
+      );
+    if (panelLoginProtectCleanupIntervalLabel)
+      panelLoginProtectCleanupIntervalLabel.textContent = tx(
+        "panel.settings.login_protect_cleanup_interval",
+      );
+    if (panelSessionMaxEntriesLabel)
+      panelSessionMaxEntriesLabel.textContent = tx(
+        "panel.settings.session_max_entries",
+      );
+    if (panelSessionCleanupIntervalLabel)
+      panelSessionCleanupIntervalLabel.textContent = tx(
+        "panel.settings.session_cleanup_interval",
       );
     updateHTTPSNotice();
     if (E.overviewRssLabel) E.overviewRssLabel.textContent = tx("detail.overview.rss");
@@ -2052,6 +2092,11 @@
       const panelLoginProtectMaxAttempts = $("panelLoginProtectMaxAttempts");
       const panelLoginProtectWindow = $("panelLoginProtectWindow");
       const panelLoginProtectBlock = $("panelLoginProtectBlock");
+      const panelLoginProtectMaxBuckets = $("panelLoginProtectMaxBuckets");
+      const panelLoginProtectBucketIdleTTL = $("panelLoginProtectBucketIdleTTL");
+      const panelLoginProtectCleanupInterval = $("panelLoginProtectCleanupInterval");
+      const panelSessionMaxEntries = $("panelSessionMaxEntries");
+      const panelSessionCleanupInterval = $("panelSessionCleanupInterval");
       if (panelFileManagerEnabled)
         panelFileManagerEnabled.checked = !!(
           c.file_manager && c.file_manager.enabled
@@ -2072,6 +2117,19 @@
       if (panelLoginProtectBlock)
         panelLoginProtectBlock.value =
           (c.login_protect && c.login_protect.block_seconds) || 600;
+      if (panelLoginProtectMaxBuckets)
+        panelLoginProtectMaxBuckets.value =
+          (c.login_protect && c.login_protect.max_buckets) || 10000;
+      if (panelLoginProtectBucketIdleTTL)
+        panelLoginProtectBucketIdleTTL.value =
+          (c.login_protect && c.login_protect.bucket_idle_ttl_seconds) || 3600;
+      if (panelLoginProtectCleanupInterval)
+        panelLoginProtectCleanupInterval.value =
+          (c.login_protect && c.login_protect.cleanup_interval_seconds) || 300;
+      if (panelSessionMaxEntries)
+        panelSessionMaxEntries.value = c.session_max_entries || 10000;
+      if (panelSessionCleanupInterval)
+        panelSessionCleanupInterval.value = c.session_cleanup_interval_seconds || 300;
       E.panelRawConfig.value = d.raw || "";
       E.panelRawMeta.textContent = tx("panel.settings.raw_meta").replace(
         "{path}",
@@ -2207,6 +2265,11 @@
       const panelLoginProtectMaxAttempts = $("panelLoginProtectMaxAttempts");
       const panelLoginProtectWindow = $("panelLoginProtectWindow");
       const panelLoginProtectBlock = $("panelLoginProtectBlock");
+      const panelLoginProtectMaxBuckets = $("panelLoginProtectMaxBuckets");
+      const panelLoginProtectBucketIdleTTL = $("panelLoginProtectBucketIdleTTL");
+      const panelLoginProtectCleanupInterval = $("panelLoginProtectCleanupInterval");
+      const panelSessionMaxEntries = $("panelSessionMaxEntries");
+      const panelSessionCleanupInterval = $("panelSessionCleanupInterval");
       const panelDisableHTTPSWarn = $("panelDisableHTTPSWarn");
       const uploadMax = Number(
         (panelFileUploadMaxMB && panelFileUploadMaxMB.value) || 0,
@@ -2253,6 +2316,55 @@
         throw new Error(
           tx("panel.settings.invalid_login_protect_block_seconds"),
         );
+      const protectMaxBuckets = Number(
+        panelLoginProtectMaxBuckets && panelLoginProtectMaxBuckets.value,
+      );
+      const protectBucketIdle = Number(
+        panelLoginProtectBucketIdleTTL && panelLoginProtectBucketIdleTTL.value,
+      );
+      const protectCleanup = Number(
+        panelLoginProtectCleanupInterval && panelLoginProtectCleanupInterval.value,
+      );
+      const sessionMaxEntries = Number(
+        panelSessionMaxEntries && panelSessionMaxEntries.value,
+      );
+      const sessionCleanup = Number(
+        panelSessionCleanupInterval && panelSessionCleanupInterval.value,
+      );
+      if (
+        !Number.isInteger(protectMaxBuckets) ||
+        protectMaxBuckets < 100 ||
+        protectMaxBuckets > 200000
+      )
+        throw new Error(tx("panel.settings.invalid_login_protect_max_buckets"));
+      if (
+        !Number.isInteger(protectBucketIdle) ||
+        protectBucketIdle < 60 ||
+        protectBucketIdle > 604800
+      )
+        throw new Error(
+          tx("panel.settings.invalid_login_protect_bucket_idle_ttl"),
+        );
+      if (
+        !Number.isInteger(protectCleanup) ||
+        protectCleanup < 10 ||
+        protectCleanup > 3600
+      )
+        throw new Error(
+          tx("panel.settings.invalid_login_protect_cleanup_interval"),
+        );
+      if (
+        !Number.isInteger(sessionMaxEntries) ||
+        sessionMaxEntries < 100 ||
+        sessionMaxEntries > 200000
+      )
+        throw new Error(tx("panel.settings.invalid_session_max_entries"));
+      if (
+        !Number.isInteger(sessionCleanup) ||
+        sessionCleanup < 10 ||
+        sessionCleanup > 3600
+      )
+        throw new Error(tx("panel.settings.invalid_session_cleanup_interval"));
       const d = await j("panel/settings", {
         method: "POST",
         body: JSON.stringify({
@@ -2282,6 +2394,11 @@
             login_protect_max_attempts: protectMax,
             login_protect_window_seconds: protectWindow,
             login_protect_block_seconds: protectBlock,
+            login_protect_max_buckets: protectMaxBuckets,
+            login_protect_bucket_idle_ttl_seconds: protectBucketIdle,
+            login_protect_cleanup_interval_seconds: protectCleanup,
+            session_max_entries: sessionMaxEntries,
+            session_cleanup_interval_seconds: sessionCleanup,
           },
         }),
       });
@@ -2329,6 +2446,11 @@
       const panelLoginProtectMaxAttempts = $("panelLoginProtectMaxAttempts");
       const panelLoginProtectWindow = $("panelLoginProtectWindow");
       const panelLoginProtectBlock = $("panelLoginProtectBlock");
+      const panelLoginProtectMaxBuckets = $("panelLoginProtectMaxBuckets");
+      const panelLoginProtectBucketIdleTTL = $("panelLoginProtectBucketIdleTTL");
+      const panelLoginProtectCleanupInterval = $("panelLoginProtectCleanupInterval");
+      const panelSessionMaxEntries = $("panelSessionMaxEntries");
+      const panelSessionCleanupInterval = $("panelSessionCleanupInterval");
       if (panelFileManagerEnabled)
         panelFileManagerEnabled.checked = !!(
           c.file_manager && c.file_manager.enabled
@@ -2349,6 +2471,19 @@
       if (panelLoginProtectBlock)
         panelLoginProtectBlock.value =
           (c.login_protect && c.login_protect.block_seconds) || 600;
+      if (panelLoginProtectMaxBuckets)
+        panelLoginProtectMaxBuckets.value =
+          (c.login_protect && c.login_protect.max_buckets) || 10000;
+      if (panelLoginProtectBucketIdleTTL)
+        panelLoginProtectBucketIdleTTL.value =
+          (c.login_protect && c.login_protect.bucket_idle_ttl_seconds) || 3600;
+      if (panelLoginProtectCleanupInterval)
+        panelLoginProtectCleanupInterval.value =
+          (c.login_protect && c.login_protect.cleanup_interval_seconds) || 300;
+      if (panelSessionMaxEntries)
+        panelSessionMaxEntries.value = c.session_max_entries || 10000;
+      if (panelSessionCleanupInterval)
+        panelSessionCleanupInterval.value = c.session_cleanup_interval_seconds || 300;
       S.metricsRefreshSeconds = Number(c.metrics_refresh_seconds || 2);
       S.disableHTTPSWarning = !!c.disable_https_warning;
       dashPolling();
