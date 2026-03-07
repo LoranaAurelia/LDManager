@@ -76,6 +76,16 @@ func (m *Manager) Start(id string) (Service, error) {
 			_ = m.store.Update(item)
 		}
 	}
+	if item.Type == "Napcat" {
+		refreshedExec, refreshErr := deploy.EnsureNapcatRunner(item.InstallDir, nil)
+		if refreshErr != nil {
+			return Service{}, refreshErr
+		}
+		if strings.TrimSpace(refreshedExec) != "" {
+			item.ExecPath = refreshedExec
+			_ = m.store.Update(item)
+		}
+	}
 
 	m.mu.RLock()
 	_, exists := m.running[id]
@@ -145,6 +155,14 @@ func (m *Manager) Start(id string) (Service, error) {
 		cmd.Env = append(cmd.Env,
 			"WEBSEAL_SERVICE_ID="+id,
 			"WEBSEAL_SERVICE_TYPE=LuckyLilliaBot",
+			"WEBSEAL_INSTALL_DIR="+item.InstallDir,
+			fmt.Sprintf("WEBSEAL_SERVICE_PORT=%d", item.Port),
+		)
+	}
+	if item.Type == "Napcat" {
+		cmd.Env = append(cmd.Env,
+			"WEBSEAL_SERVICE_ID="+id,
+			"WEBSEAL_SERVICE_TYPE=Napcat",
 			"WEBSEAL_INSTALL_DIR="+item.InstallDir,
 			fmt.Sprintf("WEBSEAL_SERVICE_PORT=%d", item.Port),
 		)
