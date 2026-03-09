@@ -41,10 +41,14 @@
   .group-grid,
   .config-grid,
   .detail-summary-row,
-  .service-cards,
   .resource-dashboard-grid,
   .file-layout {
     grid-template-columns: 1fr;
+  }
+
+  .service-card {
+    min-width: 100%;
+    max-width: none;
   }
 }
 

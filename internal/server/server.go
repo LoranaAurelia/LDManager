@@ -46,6 +46,7 @@ type Server struct {
 	sealdiceDeployer *deploy.SealdiceDeployer
 	lagrangeDeployer *deploy.LagrangeDeployer
 	llbotDeployer    *deploy.LLBotDeployer
+	napcatDeployer   *deploy.NapcatDeployer
 	loginProtector   *loginProtector
 	handler          http.Handler
 	metricsMu        sync.Mutex
@@ -93,6 +94,14 @@ type llbotDeployMeta struct {
 	Port    int    `json:"port"`
 }
 
+// napcatDeployMeta 记录 Napcat 部署来源、脚本 URL 与 WebUI 端口。
+type napcatDeployMeta struct {
+	Source    string `json:"source"`
+	ScriptURL string `json:"script_url"`
+	Port      int    `json:"port"`
+	QQDebURL  string `json:"qq_deb_url"`
+}
+
 // sealdiceInstaller 抽象 Sealdice 的安装动作（自动下载/上传包）。
 type sealdiceInstaller func(registryName string) (string, error)
 
@@ -133,6 +142,7 @@ func New(cfg config.Config, configPath string) (*Server, error) {
 		sealdiceDeployer: deploy.NewSealdiceDeployer(cfg.DataDir),
 		lagrangeDeployer: deploy.NewLagrangeDeployer(cfg.DataDir),
 		llbotDeployer:    deploy.NewLLBotDeployer(cfg.DataDir),
+		napcatDeployer:   deploy.NewNapcatDeployer(cfg.DataDir),
 		loginProtector:   newLoginProtector(cfg),
 	}
 
@@ -184,6 +194,7 @@ func (s *Server) applyRuntimeConfig(next config.Config) {
 	s.sealdiceDeployer = deploy.NewSealdiceDeployer(next.DataDir)
 	s.lagrangeDeployer = deploy.NewLagrangeDeployer(next.DataDir)
 	s.llbotDeployer = deploy.NewLLBotDeployer(next.DataDir)
+	s.napcatDeployer = deploy.NewNapcatDeployer(next.DataDir)
 }
 
 func sessionSettingsChanged(prev config.Config, next config.Config) bool {
@@ -241,6 +252,7 @@ func (s *Server) buildHandler() (http.Handler, error) {
 	mux.HandleFunc("/api/deploy/lagrange/versions", s.handleLagrangeVersions)
 	mux.HandleFunc("/api/deploy/llbot/auto", s.handleDeployLLBotAuto)
 	mux.HandleFunc("/api/deploy/llbot/upload", s.handleDeployLLBotUpload)
+	mux.HandleFunc("/api/deploy/napcat/auto", s.handleDeployNapcatAuto)
 	mux.HandleFunc("/api/deploy/logs/", s.handleDeployLogs)
 	mux.HandleFunc("/api/deploy/lagrange/signinfo", s.handleLagrangeSignInfo)
 	mux.HandleFunc("/api/deploy/lagrange/sign-probe", s.handleLagrangeSignProbe)
@@ -1296,6 +1308,90 @@ func (s *Server) handleDeployLLBotUpload(w http.ResponseWriter, r *http.Request)
 	})
 }
 
+// handleDeployNapcatAuto 处理 Napcat 脚本部署请求。
+func (s *Server) handleDeployNapcatAuto(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAuth(w, r) {
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, jsonMessage{Message: "api.method_not_allowed"})
+		return
+	}
+	if runtime.GOOS != "linux" {
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "napcat deploy is only supported on linux"})
+		return
+	}
+	if _, err := exec.LookPath("apt-get"); err != nil {
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "napcat deploy requires apt-get"})
+		return
+	}
+	if !bootstrap.HasLinuxQQ() {
+		writeJSON(w, http.StatusConflict, jsonMessage{Message: "api.qq.not_installed"})
+		return
+	}
+
+	type reqBody struct {
+		Source        string `json:"source"`
+		ScriptURL     string `json:"script_url"`
+		ScriptCommand string `json:"script_command"`
+		RegistryName  string `json:"registry_name"`
+		DisplayName   string `json:"display_name"`
+		Port          int    `json:"port"`
+		QQDebURL      string `json:"qq_deb_url"`
+		AutoStart     bool   `json:"auto_start"`
+		Restart       struct {
+			Enabled       bool `json:"enabled"`
+			DelaySeconds  int  `json:"delay_seconds"`
+			MaxCrashCount int  `json:"max_crash_count"`
+		} `json:"restart"`
+	}
+	var body reqBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, jsonMessage{Message: "api.invalid_json_body"})
+		return
+	}
+	if body.Port <= 0 {
+		body.Port = deploy.DefaultNapcatWebUIPort
+	}
+
+	deployLog := s.newDeployLogger("Napcat", body.RegistryName)
+	defer deployLog.Close()
+	deployLog.Printf("deploy: napcat request registry=%s port=%d auto_start=%t source=%s", body.RegistryName, body.Port, body.AutoStart, body.Source)
+
+	restartPolicy := toRestartPolicy(
+		body.Restart.Enabled,
+		body.Restart.DelaySeconds,
+		body.Restart.MaxCrashCount,
+	)
+	item, err := s.deployNapcat(
+		body.RegistryName,
+		body.DisplayName,
+		body.Port,
+		body.AutoStart,
+		restartPolicy,
+		body.Source,
+		body.ScriptURL,
+		body.ScriptCommand,
+		body.QQDebURL,
+		deployLog.Printf,
+	)
+	if err != nil {
+		log.Printf("deploy: napcat failed registry=%s err=%v", body.RegistryName, err)
+		deployLog.Printf("deploy: failed err=%v", err)
+		writeJSON(w, http.StatusBadRequest, map[string]any{
+			"message":    err.Error(),
+			"deploy_log": deployLog.Name,
+		})
+		return
+	}
+	log.Printf("deploy: napcat success registry=%s port=%d", body.RegistryName, body.Port)
+	deployLog.Printf("deploy: success id=%s", item.ID)
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"service":    item,
+		"deploy_log": deployLog.Name,
+	})
+}
+
 // handleLLBotQQStatus 返回当前 Linux QQ 安装状态。
 func (s *Server) handleLLBotQQStatus(w http.ResponseWriter, r *http.Request) {
 	if !s.requireAuth(w, r) {
@@ -1764,6 +1860,82 @@ func (s *Server) deployLLBotWithInstaller(
 	return item, nil
 }
 
+// deployNapcat 统一落地 Napcat 部署并注册服务记录。
+func (s *Server) deployNapcat(
+	registryName string,
+	displayName string,
+	port int,
+	autoStart bool,
+	restart services.RestartPolicy,
+	source string,
+	scriptURL string,
+	rawScriptCommand string,
+	qqDebURL string,
+	logf deployLogFunc,
+) (services.Service, error) {
+	if err := services.ValidateRegistryName(registryName); err != nil {
+		return services.Service{}, err
+	}
+	if port < 1 || port > 65535 {
+		return services.Service{}, errors.New("port must be in 1-65535")
+	}
+	if ok, message, _, err := s.checkPortAvailable(port, ""); err != nil {
+		return services.Service{}, err
+	} else if !ok {
+		return services.Service{}, errors.New(message)
+	}
+	if displayName == "" {
+		displayName = registryName
+	}
+	if strings.TrimSpace(source) == "" {
+		source = "preset"
+	}
+
+	execPath, resolvedScriptURL, err := s.napcatDeployer.DeployFromScript(registryName, deploy.NapcatDeployOptions{
+		ScriptURL:        scriptURL,
+		RawScriptCommand: rawScriptCommand,
+		WebUIPort:        port,
+		QQDebURL:         qqDebURL,
+	}, logf)
+	if err != nil {
+		return services.Service{}, err
+	}
+	bootstrap.TryAllowUFWPort(port, logf)
+
+	meta := napcatDeployMeta{
+		Source:    strings.ToLower(strings.TrimSpace(source)),
+		ScriptURL: strings.TrimSpace(resolvedScriptURL),
+		Port:      port,
+		QQDebURL:  strings.TrimSpace(qqDebURL),
+	}
+	rawMeta, _ := json.Marshal(meta)
+
+	item, err := s.serviceStore.Create(services.CreateServiceRequest{
+		ID:          registryName,
+		Name:        registryName,
+		DisplayName: displayName,
+		Type:        "Napcat",
+		WorkDir:     filepath.Dir(execPath),
+		InstallDir:  s.napcatDeployer.TargetDir(registryName),
+		ExecPath:    execPath,
+		Args:        []string{},
+		Port:        port,
+		AutoStart:   autoStart,
+		Restart:     restart,
+		Env:         map[string]string{},
+		DeployMeta:  services.DeployMeta{Kind: "Napcat", Payload: rawMeta},
+	}, filepath.Join(s.cfg.DataDir, "logs"))
+	if err != nil {
+		return services.Service{}, err
+	}
+
+	if autoStart {
+		_, _ = s.serviceMgr.Start(item.ID)
+		item, _ = s.serviceStore.Get(item.ID)
+	}
+	return item, nil
+}
+
 // handleServiceByID 是服务子路由总入口。
 // handleServiceByID 是服务子路由总入口，负责 action 分发。
 func (s *Server) handleServiceByID(w http.ResponseWriter, r *http.Request) {
@@ -1918,6 +2090,13 @@ func (s *Server) handleServicePort(w http.ResponseWriter, r *http.Request, id st
 			return
 		}
 		updateLLBotMetaPort(&item, body.Port)
+		bootstrap.TryAllowUFWPort(body.Port, nil)
+	case "Napcat":
+		if err := deploy.UpdateNapcatWebUIPort(item.InstallDir, body.Port); err != nil {
+			writeJSON(w, http.StatusBadRequest, jsonMessage{Message: err.Error()})
+			return
+		}
+		updateNapcatMetaPort(&item, body.Port)
 		bootstrap.TryAllowUFWPort(body.Port, nil)
 	}
 
@@ -2249,6 +2428,10 @@ func (s *Server) handleServiceRebuildInfo(w http.ResponseWriter, r *http.Request
 		if meta, ok := readDeployMeta[llbotDeployMeta](item.DeployMeta, "LuckyLilliaBot"); ok && strings.TrimSpace(meta.Source) != "" {
 			source = strings.ToLower(strings.TrimSpace(meta.Source))
 		}
+	case "Napcat":
+		if meta, ok := readDeployMeta[napcatDeployMeta](item.DeployMeta, "Napcat"); ok && strings.TrimSpace(meta.Source) != "" {
+			source = strings.ToLower(strings.TrimSpace(meta.Source))
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"type":          item.Type,
@@ -2535,6 +2718,29 @@ func (s *Server) rebuildService(id string, mode string) (map[string]any, error) 
 		item.ExecPath = execPath
 		item.WorkDir = filepath.Dir(execPath)
 		item.Port = meta.Port
+	case "Napcat":
+		meta, ok := readDeployMeta[napcatDeployMeta](item.DeployMeta, "Napcat")
+		if !ok {
+			return nil, errors.New("deploy meta missing for napcat")
+		}
+		rebuildMode := strings.ToLower(strings.TrimSpace(mode))
+		if rebuildMode == "upload" {
+			return nil, errors.New("napcat rebuild does not support upload mode")
+		}
+		execPath, _, err := s.napcatDeployer.DeployFromScript(item.ID, deploy.NapcatDeployOptions{
+			ScriptURL: meta.ScriptURL,
+			WebUIPort: meta.Port,
+			QQDebURL:  meta.QQDebURL,
+		}, deployLog.Printf)
+		if err != nil {
+			return nil, err
+		}
+		if err := deploy.UpdateNapcatWebUIPort(s.napcatDeployer.TargetDir(item.ID), meta.Port); err != nil {
+			deployLog.Printf("deploy: warning unable to set napcat webui port: %v", err)
+		}
+		item.ExecPath = execPath
+		item.WorkDir = filepath.Dir(execPath)
+		item.Port = meta.Port
 	default:
 		return nil, errors.New("unsupported service type")
 	}
@@ -2568,7 +2774,7 @@ func (s *Server) deleteService(id string) error {
 		_ = os.RemoveAll(item.InstallDir)
 	}
 	_ = os.RemoveAll(services.ServiceLogRoot(s.cfg.DataDir, item.ID))
-	if item.Type == "Sealdice" || item.Type == "LuckyLilliaBot" {
+	if item.Type == "Sealdice" || item.Type == "LuckyLilliaBot" || item.Type == "Napcat" {
 		bootstrap.TryDeleteUFWPort(item.Port, nil)
 	}
 	return s.serviceStore.Delete(id)
@@ -2659,6 +2865,17 @@ func updateLLBotMetaPort(item *services.Service, port int) {
 	meta.Port = port
 	raw, _ := json.Marshal(meta)
 	item.DeployMeta = services.DeployMeta{Kind: "LuckyLilliaBot", Payload: raw}
+}
+
+// updateNapcatMetaPort 同步更新 Napcat DeployMeta 端口。
+func updateNapcatMetaPort(item *services.Service, port int) {
+	meta, ok := readDeployMeta[napcatDeployMeta](item.DeployMeta, "Napcat")
+	if !ok {
+		return
+	}
+	meta.Port = port
+	raw, _ := json.Marshal(meta)
+	item.DeployMeta = services.DeployMeta{Kind: "Napcat", Payload: raw}
 }
 
 // proxyToService 将请求转发到目标服务的本地监听端口。
