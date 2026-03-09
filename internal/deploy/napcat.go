@@ -294,15 +294,8 @@ if [ ! -f "$SCRIPT_DIR/%s" ]; then
   exit 1
 fi
 
-QQ_CMD=""
-if [ -x "%s" ]; then
-  QQ_CMD="%s"
-elif command -v qq >/dev/null 2>&1; then
-  QQ_CMD="$(command -v qq)"
-fi
-
-if [ -z "$QQ_CMD" ]; then
-  echo "qq executable not found: %s or qq in PATH"
+if [ ! -x "%s" ]; then
+  echo "qq executable not found: %s"
   exit 1
 fi
 
@@ -320,8 +313,8 @@ export DISPLAY=:1
 if [ -n "${WEBSEAL_SERVICE_PORT:-}" ]; then
   export NAPCAT_WEBUI_PREFERRED_PORT="$WEBSEAL_SERVICE_PORT"
 fi
-exec env LD_PRELOAD="$SCRIPT_DIR/%s" "$QQ_CMD" --no-sandbox "$@"
-`, napcatLauncherSOName, napcatLauncherSOName, napcatQQBinary, napcatQQBinary, napcatQQBinary, napcatLauncherSOName)
+exec env LD_PRELOAD="$SCRIPT_DIR/%s" %s --no-sandbox "$@"
+`, napcatLauncherSOName, napcatLauncherSOName, napcatQQBinary, napcatQQBinary, napcatLauncherSOName, napcatQQBinary)
 	if err := os.WriteFile(runner, []byte(content), 0o755); err != nil {
 		return "", err
 	}
