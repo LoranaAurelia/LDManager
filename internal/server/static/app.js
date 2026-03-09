@@ -334,7 +334,7 @@
     "logHistoryCurrentName",
     "logHistoryContent",
   ];
-  const TYPES = ["Sealdice", "Lagrange", "LuckyLilliaBot"];
+  const TYPES = ["Sealdice", "Lagrange", "LuckyLilliaBot", "Napcat"];
   const TXT = [
     ".txt",
     ".json",
@@ -1288,7 +1288,7 @@
     }
   }
   function groups() {
-    const m = { Sealdice: [], LuckyLilliaBot: [], Lagrange: [] };
+    const m = { Sealdice: [], LuckyLilliaBot: [], Lagrange: [], Napcat: [] };
     S.svcs.forEach((s) => (m[s.type] || (m[s.type] = [])).push(s));
     Object.values(m).forEach((a) =>
       a.sort((x, y) => disp(x).localeCompare(disp(y), "zh-CN")),
@@ -1300,6 +1300,7 @@
       Sealdice: "tree-category-seal",
       Lagrange: "tree-category-lagrange",
       LuckyLilliaBot: "tree-category-llbot",
+      Napcat: "tree-category-napcat",
     };
     const g = groups();
     E.serviceTree.innerHTML = Object.entries(g)
@@ -1358,16 +1359,19 @@
       Sealdice: "svc-theme-seal",
       Lagrange: "svc-theme-lagrange",
       LuckyLilliaBot: "svc-theme-llbot",
+      Napcat: "svc-theme-napcat",
     };
     const iconMap = {
       Sealdice: "icons/sealdice.png",
       Lagrange: "icons/lagrange.png",
       LuckyLilliaBot: "icons/llbot.png",
+      Napcat: "icons/llbot.png",
     };
     const groups = [
       ["Sealdice", "service-group-seal"],
       ["LuckyLilliaBot", "service-group-llbot"],
       ["Lagrange", "service-group-lagrange"],
+      ["Napcat", "service-group-napcat"],
     ];
     const card = (s) =>
       `<button class="service-card ${typeClass[s.type] || ""} ${s.status === "running" ? "svc-running" : "svc-stopped"}" type="button" data-open="${esc(s.id)}"><div class="service-card-head"><div class="service-icon-chip"><img class="service-icon" src="${esc(iconMap[s.type] || "")}" alt="${esc(s.type)}"></div><div class="service-title-block"><strong class="service-title">${esc(disp(s))}</strong><div class="service-reg mono">${esc(s.id)}</div></div><span class="status-chip ${s.status === "running" ? "status-running" : "status-stopped"}">${st(s.status)}</span></div><div class="service-meta-grid service-meta-grid-3"><div class="service-meta-box"><span>${tx("service.meta.type")}</span><strong>${esc(typ(s.type))}</strong></div><div class="service-meta-box"><span>${tx("service.pid")}</span><strong>${s.pid || "-"}</strong></div><div class="service-meta-box"><span>${tx("service.port")}</span><strong>${s.port || "-"}</strong></div><div class="service-meta-box"><span>${tx("service.meta.auto_start")}</span><strong>${s.auto_start ? tx("common.yes") : tx("common.no")}</strong></div><div class="service-meta-box"><span>${tx("service.meta.auto_restart")}</span><strong>${s.restart && s.restart.enabled ? tx("common.yes") : tx("common.no")}</strong></div><div class="service-meta-box"><span>${tx("service.meta.crash_count")}</span><strong>${(s.restart && s.restart.consecutive_crash) || 0}</strong></div></div><div class="service-card-actions"><span class="btn btn-soft">${tx("service.enter_manage")}</span></div></button>`;
