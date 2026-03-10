@@ -334,7 +334,7 @@
     "logHistoryCurrentName",
     "logHistoryContent",
   ];
-  const TYPES = ["Sealdice", "Lagrange", "LuckyLilliaBot", "Napcat"];
+  const TYPES = ["Sealdice", "Lagrange", "LuckyLilliaBot"];
   const TXT = [
     ".txt",
     ".json",
@@ -1061,7 +1061,6 @@
       ["Sealdice", "Sealdice"],
       ["Lagrange", "Lagrange"],
       ["LuckyLilliaBot", "LuckyLilliaBot"],
-      ["Napcat", "Napcat"],
     ]);
     fill(E.serviceStatusFilter, [
       ["all", tx("service.filter.all_status")],
@@ -1084,7 +1083,6 @@
       ["Sealdice", tx("create.type.sealdice")],
       ["Lagrange", tx("create.type.lagrange")],
       ["LuckyLilliaBot", tx("create.type.llbot")],
-      ["Napcat", tx("create.type.napcat")],
     ]);
     $$(".tab-btn").forEach(
       (b) => (b.textContent = tx("detail.tab." + b.dataset.tab)),
@@ -1288,7 +1286,7 @@
     }
   }
   function groups() {
-    const m = { Sealdice: [], LuckyLilliaBot: [], Lagrange: [], Napcat: [] };
+    const m = { Sealdice: [], LuckyLilliaBot: [], Lagrange: [] };
     S.svcs.forEach((s) => (m[s.type] || (m[s.type] = [])).push(s));
     Object.values(m).forEach((a) =>
       a.sort((x, y) => disp(x).localeCompare(disp(y), "zh-CN")),
@@ -1300,7 +1298,6 @@
       Sealdice: "tree-category-seal",
       Lagrange: "tree-category-lagrange",
       LuckyLilliaBot: "tree-category-llbot",
-      Napcat: "tree-category-napcat",
     };
     const g = groups();
     E.serviceTree.innerHTML = Object.entries(g)
@@ -1359,19 +1356,16 @@
       Sealdice: "svc-theme-seal",
       Lagrange: "svc-theme-lagrange",
       LuckyLilliaBot: "svc-theme-llbot",
-      Napcat: "svc-theme-napcat",
     };
     const iconMap = {
       Sealdice: "icons/sealdice.png",
       Lagrange: "icons/lagrange.png",
       LuckyLilliaBot: "icons/llbot.png",
-      Napcat: "icons/llbot.png",
     };
     const groups = [
       ["Sealdice", "service-group-seal"],
       ["LuckyLilliaBot", "service-group-llbot"],
       ["Lagrange", "service-group-lagrange"],
-      ["Napcat", "service-group-napcat"],
     ];
     const card = (s) =>
       `<button class="service-card ${typeClass[s.type] || ""} ${s.status === "running" ? "svc-running" : "svc-stopped"}" type="button" data-open="${esc(s.id)}"><div class="service-card-head"><div class="service-icon-chip"><img class="service-icon" src="${esc(iconMap[s.type] || "")}" alt="${esc(s.type)}"></div><div class="service-title-block"><strong class="service-title">${esc(disp(s))}</strong><div class="service-reg mono">${esc(s.id)}</div></div><span class="status-chip ${s.status === "running" ? "status-running" : "status-stopped"}">${st(s.status)}</span></div><div class="service-meta-grid service-meta-grid-3"><div class="service-meta-box"><span>${tx("service.meta.type")}</span><strong>${esc(typ(s.type))}</strong></div><div class="service-meta-box"><span>${tx("service.pid")}</span><strong>${s.pid || "-"}</strong></div><div class="service-meta-box"><span>${tx("service.port")}</span><strong>${s.port || "-"}</strong></div><div class="service-meta-box"><span>${tx("service.meta.auto_start")}</span><strong>${s.auto_start ? tx("common.yes") : tx("common.no")}</strong></div><div class="service-meta-box"><span>${tx("service.meta.auto_restart")}</span><strong>${s.restart && s.restart.enabled ? tx("common.yes") : tx("common.no")}</strong></div><div class="service-meta-box"><span>${tx("service.meta.crash_count")}</span><strong>${(s.restart && s.restart.consecutive_crash) || 0}</strong></div></div><div class="service-card-actions"><span class="btn btn-soft">${tx("service.enter_manage")}</span></div></button>`;
@@ -2635,20 +2629,11 @@
       LLN(),
     );
   }
-  function createNapcatUI() {
-    const body = `<div class="form-grid config-grid"><div><label>${tx("create.source.label")}</label><select id="ncSource"><option value="mirror_moeyy">${tx("create.napcat.source.mirror_moeyy")}</option><option value="mirror_jiashu">${tx("create.napcat.source.mirror_jiashu")}</option><option value="github">${tx("create.napcat.source.github")}</option><option value="custom">${tx("create.napcat.source.custom")}</option></select></div><div><label>${tx("create.webui_port.label")}</label><input id="ncPort" type="number" min="1" max="65535" value="6099"><div id="ncPortHint" class="port-hint"></div></div><div id="ncCmdWrap" class="hidden config-span-full"><label>${tx("create.napcat.command.label")}</label><input id="ncCmd" type="text" placeholder="curl -o napcat.sh https://... && sudo bash napcat.sh"><p class="muted">${tx("create.napcat.command.notice")}</p></div><div class="config-span-full"><button id="ncQQManageBtn" class="btn btn-soft" type="button">${tx("create.napcat.qq_manage")}</button></div></div>`;
-    return createCard(
-      TXT_SAFE("create.group.deploy", "部署 / 运行配置"),
-      body,
-      tx("create.napcat.notice"),
-    );
-  }
   function typeUI() {
     const t = E.createType.value;
     if (t === "Sealdice") return createSealdiceUI();
     if (t === "Lagrange") return createLagrangeUI();
-    if (t === "LuckyLilliaBot") return createLLBotUI();
-    return createNapcatUI();
+    return createLLBotUI();
   }
   function sourceText(v) {
     if (v === "upload") return tx("create.source.upload");
@@ -2723,7 +2708,7 @@
           $("lagEnableHTTP").checked ? $("lagHTTPPort").value : tx("common.no"),
         ),
       );
-    } else if (t === "LuckyLilliaBot") {
+    } else {
       L.push(
         tx("create.type.summary.source").replace(
           "{value}",
@@ -2740,19 +2725,6 @@
         tx("create.type.summary.webui").replace(
           "{value}",
           $("llPort").value || "-",
-        ),
-      );
-    } else {
-      L.push(
-        tx("create.type.summary.source").replace(
-          "{value}",
-          tx("create.napcat.source." + $("ncSource").value, $("ncSource").value),
-        ),
-      );
-      L.push(
-        tx("create.type.summary.webui").replace(
-          "{value}",
-          $("ncPort").value || "-",
         ),
       );
     }
@@ -2881,7 +2853,7 @@
       });
 
       S.createGetSignURL = getCreateSignURL;
-    } else if (t === "LuckyLilliaBot") {
+    } else {
       const src = $("llSource");
 
       const llUploadWrap = $("llUploadWrap");
@@ -2904,22 +2876,6 @@
       $("llQQManageBtn").onclick = () => qqOpen(true);
       bindPortFieldRealtime("llPort", "llPortHint", "");
       $("llSource").onchange();
-    } else {
-      S.createGetSignURL = null;
-      ["ncSource", "ncPort", "ncCmd"].forEach((id) => {
-        const x = $(id);
-        if (!x) return;
-        x.onchange = sum;
-        x.oninput = sum;
-      });
-      $("ncSource").onchange = () => {
-        const source = $("ncSource").value;
-        $("ncCmdWrap").classList.toggle("hidden", source !== "custom");
-        sum();
-      };
-      $("ncQQManageBtn").onclick = () => qqOpen(true);
-      bindPortFieldRealtime("ncPort", "ncPortHint", "");
-      $("ncSource").onchange();
     }
     sum();
   }
@@ -3152,7 +3108,7 @@
             }),
           );
         }
-      } else if (t === "LuckyLilliaBot") {
+      } else {
         const qs = await j("llbot/qq/status");
         if (!qs.installed) {
           qqOpen(true);
@@ -3199,40 +3155,6 @@
             }),
           );
         }
-      } else {
-        const qs = await j("llbot/qq/status");
-        if (!qs.installed) {
-          qqOpen(true);
-          throw new Error(tx("qq.modal.need_before_deploy"));
-        }
-        const chk = await validatePortField("ncPort", "ncPortHint", "");
-        if (!chk.ok) throw new Error(chk.message || tx("error.invalid_port"));
-        const source = String($("ncSource").value || "mirror_moeyy");
-        const map = {
-          mirror_moeyy:
-            "https://github.moeyy.xyz/https://raw.githubusercontent.com/NapNeko/napcat-linux-installer/refs/heads/main/install.sh",
-          mirror_jiashu:
-            "https://jiashu.1win.eu.org/https://raw.githubusercontent.com/NapNeko/napcat-linux-installer/refs/heads/main/install.sh",
-          github:
-            "https://raw.githubusercontent.com/NapNeko/napcat-linux-installer/refs/heads/main/install.sh",
-        };
-        const cmd = String($("ncCmd").value || "").trim();
-        if (source === "custom" && !cmd) throw new Error(tx("create.napcat.command.required"));
-        r = await runDeploy(() =>
-          j("deploy/napcat/auto", {
-            method: "POST",
-            body: JSON.stringify({
-              source,
-              script_url: map[source] || "",
-              script_command: source === "custom" ? cmd : "",
-              registry_name: id,
-              display_name: name,
-              port: chk.port,
-              auto_start: auto,
-              restart: rs,
-            }),
-          }),
-        );
       }
       hide(E.createModal);
       if (r.deploy_log) depOpen(r.deploy_log, true);
