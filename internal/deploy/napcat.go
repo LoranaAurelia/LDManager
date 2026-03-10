@@ -260,19 +260,6 @@ func runNapcatInstallScript(targetDir string, scriptPath string, qqDebURL string
 	if strings.TrimSpace(qqDebURL) != "" {
 		env = append(env, "LDM_NAPCAT_QQ_DEB_URL="+strings.TrimSpace(qqDebURL))
 	}
-
-	// napcat-linux-installer 强依赖 sudo 命令；在 root 运行且系统未安装 sudo 时，提供无操作提权 shim，避免脚本中断。
-	sudoShimDir, err := os.MkdirTemp(targetDir, "ldm-sudo-shim-")
-	if err != nil {
-		return fmt.Errorf("prepare sudo shim failed: %w", err)
-	}
-	defer func() { _ = os.RemoveAll(sudoShimDir) }()
-	sudoShimPath := filepath.Join(sudoShimDir, "sudo")
-	sudoShim := "#!/bin/sh\nexec \"$@\"\n"
-	if err := os.WriteFile(sudoShimPath, []byte(sudoShim), 0o755); err != nil {
-		return fmt.Errorf("write sudo shim failed: %w", err)
-	}
-	env = append(env, "PATH="+sudoShimDir+":"+os.Getenv("PATH"))
 	cmd.Env = env
 	out, err := cmd.CombinedOutput()
 	if logf != nil {
@@ -307,15 +294,8 @@ if [ ! -f "$SCRIPT_DIR/%s" ]; then
   exit 1
 fi
 
-QQ_CMD=""
-if [ -x "%s" ]; then
-  QQ_CMD="%s"
-elif command -v qq >/dev/null 2>&1; then
-  QQ_CMD="$(command -v qq)"
-fi
-
-if [ -z "$QQ_CMD" ]; then
-  echo "qq executable not found: %s or qq in PATH"
+if [ ! -x "%s" ]; then
+  echo "qq executable not found: %s"
   exit 1
 fi
 
@@ -333,8 +313,8 @@ export DISPLAY=:1
 if [ -n "${WEBSEAL_SERVICE_PORT:-}" ]; then
   export NAPCAT_WEBUI_PREFERRED_PORT="$WEBSEAL_SERVICE_PORT"
 fi
-exec env LD_PRELOAD="$SCRIPT_DIR/%s" "$QQ_CMD" --no-sandbox "$@"
-`, napcatLauncherSOName, napcatLauncherSOName, napcatQQBinary, napcatQQBinary, napcatQQBinary, napcatLauncherSOName)
+exec env LD_PRELOAD="$SCRIPT_DIR/%s" %s --no-sandbox "$@"
+`, napcatLauncherSOName, napcatLauncherSOName, napcatQQBinary, napcatQQBinary, napcatLauncherSOName, napcatQQBinary)
 	if err := os.WriteFile(runner, []byte(content), 0o755); err != nil {
 		return "", err
 	}
